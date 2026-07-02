@@ -16,7 +16,7 @@ from .config import settings
 from .db import close_pool, init_pool
 from .handlers import get_main_router
 from .logger import setup_logging
-from .middlewares import LoggingMiddleware
+from .middlewares import AntiAbuseMiddleware, LoggingMiddleware
 
 
 async def main() -> None:
@@ -38,7 +38,10 @@ async def main() -> None:
     dp["pool"] = pool
     dp["redis"] = redis
 
+    # Логирование первым — чтобы даже заблокированные анти-абьюзом апдейты попали
+    # в лог/журнал; анти-абьюз следом (режет флуд/длину до хендлеров).
     dp.update.middleware(LoggingMiddleware())
+    dp.update.middleware(AntiAbuseMiddleware())
     dp.include_router(get_main_router())
 
     # Фоновый поллер pending-платежей ЮKassa (домена нет → без вебхука, этап 6).

@@ -13,6 +13,8 @@
 """
 from __future__ import annotations
 
+import time
+
 import asyncpg
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -159,6 +161,18 @@ async def _collect_step(
         return
 
     data = {} if fresh else await state.get_data()
+    # Брошенный сбор: если пользователь вернулся позже TTL — старый контекст
+    # устарел, не тащим и не оплачиваем его, начинаем ситуацию заново (§10 таймаут;
+    # экономим токены служебной модели на разросшейся истории).
+    if not fresh:
+        updated_at = float(data.get("collect_updated_at") or 0)
+        if time.time() - updated_at > settings.collect_dialog_ttl_seconds:
+            logger.info(
+                f"⏳ Сбор @{u.username or '—'} устарел (>"
+                f"{settings.collect_dialog_ttl_seconds}с) → начинаю заново"
+            )
+            data = {}
+            fresh = True
     case: dict = data.get("case") or {}
     step = int(data.get("collect_step") or 0)
     ch: list[dict] = list(data.get("collect_history") or [])
@@ -216,6 +230,7 @@ async def _collect_step(
             "collect_step": step,
             "collect_history": ch,
             "original_question": original_question,
+            "collect_updated_at": time.time(),  # для таймаута брошенного сбора (§10)
         }
     )
     await repo.add_event(pool, u.id, "Уточняющий вопрос")

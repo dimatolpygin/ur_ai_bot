@@ -11,7 +11,8 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject, Update
 
-from . import repo
+from . import repo, texts
+from .config import settings
 from .logger import logger
 
 
@@ -74,3 +75,72 @@ class LoggingMiddleware(BaseMiddleware):
         logger.info(
             f"👤 @{u.username or '—'} (id:{u.id}, {u.first_name}) → [кнопка] {cb.data}"
         )
+
+
+class AntiAbuseMiddleware(BaseMiddleware):
+    """Защита от абьюза (этап 8): лимит длины сообщения + rate-limit флуда.
+
+    Применяется только к входящим сообщениям (inline-кнопки ИИ не стоят и не жгут
+    токены — их не режем, чтобы не ломать оплату/навигацию). Команды (`/start`,
+    `/admin`, `/id`) пропускаем всегда — это запасной выход из любого залипания.
+    Rate-limit — на Redis-счётчике с TTL-окном; предупреждаем один раз за окно,
+    дальше молча гасим, чтобы не спамить в ответ на спам.
+    """
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        update: Update = event  # type: ignore[assignment]
+        msg = update.message
+        # Не сообщение (callback/прочее) — не наше дело, пропускаем дальше.
+        if msg is None or msg.from_user is None:
+            return await handler(event, data)
+
+        text = msg.text or ""
+        # Команды — всегда пропускаем (escape-hatch), их не абьюзят по токенам.
+        if text.startswith("/"):
+            return await handler(event, data)
+
+        redis = data.get("redis")
+        uid = msg.from_user.id
+
+        # 1) Rate-limit флуда (Redis INCR + EXPIRE окна).
+        if redis is not None and await self._is_flooding(redis, uid, msg):
+            return  # поток остановлен, handler не вызываем
+
+        # 2) Лимит длины (после rate-limit: флуд коротышами тоже гасится).
+        if len(text) > settings.max_message_length:
+            await msg.answer(texts.too_long(settings.max_message_length))
+            logger.info(
+                f"⛔ Слишком длинное сообщение @{msg.from_user.username or '—'} "
+                f"(id:{uid}, {len(text)} симв.) — не отправлено в модель"
+            )
+            return
+
+        return await handler(event, data)
+
+    @staticmethod
+    async def _is_flooding(redis: Any, uid: int, msg: Message) -> bool:
+        """True = лимит превышен (сообщение гасим). Предупреждаем один раз за окно."""
+        key = f"urist:rl:{uid}"
+        try:
+            count = await redis.incr(key)
+            if count == 1:
+                await redis.expire(key, settings.rate_limit_window_seconds)
+        except Exception as e:  # noqa: BLE001 — сбой Redis не должен ронять обработку
+            logger.warning(f"Rate-limit: сбой Redis ({e!r}) — пропускаю без лимита")
+            return False
+
+        if count <= settings.rate_limit_messages:
+            return False
+        # Первое превышение в окне — предупреждаем; дальше молча гасим.
+        if count == settings.rate_limit_messages + 1:
+            await msg.answer(texts.RATE_LIMITED)
+            logger.info(
+                f"⛔ Rate-limit @{msg.from_user.username or '—'} (id:{uid}): "
+                f"{count} сообщ. за {settings.rate_limit_window_seconds}с — гашу"
+            )
+        return True
