@@ -15,7 +15,7 @@ import asyncpg
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message
+from aiogram.types import LinkPreviewOptions, Message
 from redis.asyncio import Redis
 
 from .. import ai, keyboards, memory, repo, texts
@@ -97,31 +97,42 @@ async def handle_question(
     await message.bot.send_chat_action(message.chat.id, "typing")
     status = await message.answer(texts.THINKING)
 
+    async def notify(text: str) -> None:
+        """Обновляет статус поиска в одном сообщении («не молчим», §5.3)."""
+        try:
+            await status.edit_text(text)
+        except Exception:  # noqa: BLE001 — совпадающий текст/сеть не критичны
+            pass
+
     history = await memory.get_history(redis, u.id)
     try:
-        reply = await ai.answer(history, question)
+        reply, sources = await ai.answer_with_search(history, question, notify)
     except ai.AIError as e:
         logger.warning(f"ИИ не ответил @{u.username or '—'}: {e} — баланс не списан")
         await _safe_delete(status)
         await message.answer(texts.AI_ERROR, reply_markup=keyboards.ask_screen())
         return
 
-    # Успех → списываем ровно здесь (единственная точка расхода).
+    # Успех → списываем ровно здесь (единственная точка расхода за весь поиск).
     new_balance = await repo.charge_one(pool, u.id)
     if new_balance is None:
         # Крайне редкая гонка: баланс исчерпан между проверкой и списанием.
         new_balance = 0
         logger.warning(f"@{u.username or '—'}: списание не прошло (баланс 0 в гонке)")
 
+    # В память кладём текст ответа (без служебного блока источников).
     await memory.append(redis, u.id, question, reply)
     await repo.add_event(pool, u.id, "Ответ ИИ выдан")
 
     await _safe_delete(status)
     await message.answer(
-        reply + texts.answer_footer(new_balance), reply_markup=keyboards.ask_screen()
+        reply + texts.sources_block(sources) + texts.answer_footer(new_balance),
+        reply_markup=keyboards.ask_screen(),
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     logger.info(
-        f"🤖 Бот → @{u.username or '—'}: ответ ИИ выдан, баланс {new_balance}"
+        f"🤖 Бот → @{u.username or '—'}: ответ выдан (источников {len(sources)}), "
+        f"баланс {new_balance}"
     )
 
 

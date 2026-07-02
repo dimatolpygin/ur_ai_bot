@@ -86,6 +86,14 @@ def answer_footer(balance: int) -> str:
     )
 
 
+def sources_block(urls: list[str], limit: int = 5) -> str:
+    """Компактный список источников под ответом (когда был веб-поиск)."""
+    if not urls:
+        return ""
+    lines = [f"{i}. {u}" for i, u in enumerate(urls[:limit], 1)]
+    return "\n\n<b>Источники:</b>\n" + "\n".join(lines)
+
+
 AI_ERROR = (
     "<b>Не получилось получить ответ.</b>\n\n"
     "Похоже, помощник сейчас недоступен или перегружен. Запрос <b>не списан</b>. "

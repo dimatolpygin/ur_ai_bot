@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     dialog_memory_messages: int = 10
     dialog_ttl_seconds: int = 259200  # 3 дня — чистим брошенные диалоги
 
+    # ── Веб-поиск / агент (этап 3) ───────────────────────────────────────────
+    max_search_steps: int = 4  # кап итераций tool-calling петли (§8 спеки)
+    search_results_per_query: int = 5  # сколько результатов берём с провайдера
+    search_token_budget: int = 12000  # токен-бюджет на вопрос → форс-финал
+    search_timeout: int = 20  # секунд на один вызов поисковика
+
     # ── Веб-поиск (этап 3+): Tavily основной, Exa/Firecrawl запасные ──────────
     tavily_api_key: str = ""
     exa_api_key: str = ""

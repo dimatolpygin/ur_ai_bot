@@ -16,6 +16,7 @@ venv/
 переписка.txt
 тз.txt
 заказ.txt
+web_search_api-key.txt
 
 # IDE / OS
 .idea/
