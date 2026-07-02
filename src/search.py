@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncpg
 import aiohttp
 
-from . import settings_repo
+from . import repo, settings_repo
 from .config import settings
 from .logger import logger
 
@@ -107,11 +107,14 @@ _PROVIDERS = (
 )
 
 
-async def run_web_search(query: str, pool: asyncpg.Pool | None = None) -> list[Result]:
+async def run_web_search(
+    query: str, pool: asyncpg.Pool | None = None, tg_id: int | None = None
+) -> list[Result]:
     """Ищет по цепочке провайдеров. Возвращает нормализованные результаты или [].
 
     `pool` (этап 7): источник горячих ключей из app_settings и счётчика расхода. Без
     пула — фолбэк на ключи из .env (совместимость), расход не учитывается.
+    `tg_id` (этап 9): для аналитического события web_search на каждый вызов провайдера.
     """
     timeout = aiohttp.ClientTimeout(total=settings.search_timeout)
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -128,9 +131,15 @@ async def run_web_search(query: str, pool: asyncpg.Pool | None = None) -> list[R
             except Exception as e:  # noqa: BLE001 — переходим к следующему провайдеру
                 logger.warning(f"Поиск {name} упал ({query!r}): {e!r} → следующий")
                 continue
-            # Вызов состоялся (ответ получен) — учитываем расход квоты провайдера.
+            # Вызов состоялся (ответ получен) — учитываем расход квоты провайдера
+            # и пишем аналитическое событие поиска (этап 9).
             if pool is not None:
                 await settings_repo.bump_search_usage(pool, pid)
+                if tg_id is not None:
+                    await repo.log_event(
+                        pool, tg_id, repo.EVENT_WEB_SEARCH,
+                        {"provider": pid, "results": len(results)},
+                    )
             if results:
                 logger.info(
                     f"Поиск {name}: {query!r} → {len(results)} рез. (провайдер выбран)"

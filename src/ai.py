@@ -241,13 +241,15 @@ async def answer_with_search(
     question: str,
     notify: NotifyFn | None = None,
     pool: asyncpg.Pool | None = None,
+    tg_id: int | None = None,
 ) -> tuple[str, list[str]]:
     """Агент с веб-поиском (этап 3): tool-calling петля с капами и форс-финалом.
 
     Модель сама решает, искать ли и сколько (кап `max_search_steps` + токен-бюджет).
     Возвращает (текст_ответа, список_источников). Списание — в хендлере, только при
     успешной выдаче. `notify(text)` — статусы пользователю во время поиска. `pool`
-    (этап 7) прокидывается в поиск для горячих ключей и учёта расхода провайдеров.
+    (этап 7) прокидывается в поиск для горячих ключей и учёта расхода провайдеров;
+    `tg_id` (этап 9) — для аналитического события web_search на каждый вызов поиска.
     """
     if not settings.openrouter_api_key:
         raise AIError("OPENROUTER_API_KEY не задан")
@@ -300,7 +302,7 @@ async def answer_with_search(
 
             for call in tool_calls:
                 query = _parse_query(call)
-                results = await search.run_web_search(query, pool)
+                results = await search.run_web_search(query, pool, tg_id)
                 for r in results:
                     if r.get("url"):
                         sources.append(r["url"])

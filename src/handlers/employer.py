@@ -122,7 +122,7 @@ async def handle_employer(
     # Изолированный сценарий: без памяти диалога, только шаблонный запрос.
     try:
         reply, sources = await ai.answer_with_search(
-            [], texts.employer_query(query), notify, pool
+            [], texts.employer_query(query), notify, pool, u.id
         )
     except ai.AIError as e:
         logger.warning(f"Проверка работодателя не удалась @{u.username or '—'}: {e}")
@@ -137,6 +137,9 @@ async def handle_employer(
         logger.warning(f"@{u.username or '—'}: списание не прошло (баланс 0 в гонке)")
 
     await repo.add_event(pool, u.id, "Проверка работодателя")
+    await repo.log_event(
+        pool, u.id, repo.EVENT_EMPLOYER_CHECK, {"sources": len(sources)}
+    )
 
     await _safe_delete(status)
     await message.answer(

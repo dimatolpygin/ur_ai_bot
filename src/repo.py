@@ -4,7 +4,9 @@
 """
 from __future__ import annotations
 
+import json
 from decimal import Decimal
+from typing import Any
 
 import asyncpg
 
@@ -86,6 +88,38 @@ async def add_event(pool: asyncpg.Pool, tg_id: int, action: str) -> None:
         "INSERT INTO user_events (tg_id, action) VALUES ($1, $2)",
         tg_id, action,
     )
+
+
+# ── Типизированные бизнес-события для аналитики/конверсии (этап 9) ─────────────
+# Стабильные коды: не переименовывать без миграции данных — по ним строятся срезы.
+EVENT_REGISTER = "register"                # новый пользователь зарегистрировался
+EVENT_CLARIFY = "clarify"                  # задан уточняющий вопрос (бесплатно)
+EVENT_OFFTOPIC = "offtopic"                # ввод не по теме (без списания)
+EVENT_QUESTION = "question"                # выдан ответ ИИ (списан 1 запрос)
+EVENT_EMPLOYER_CHECK = "employer_check"    # выдана проверка работодателя (списан)
+EVENT_WEB_SEARCH = "web_search"            # один реальный вызов веб-поисковика
+EVENT_PAYMENT_CREATED = "payment_created"  # создан счёт ЮKassa
+EVENT_PAYMENT_SUCCEEDED = "payment_succeeded"  # платёж прошёл, пакет зачислен
+
+
+async def log_event(
+    executor: Any, tg_id: int, event_type: str, meta: dict | None = None
+) -> None:
+    """Пишет типизированное событие в `events` (аналитический поток, этап 9).
+
+    `executor` — пул или соединение (чтобы писать событие внутри той же транзакции,
+    например при зачислении платежа). `meta` — произвольные детали (сериализуем в
+    JSONB). Best-effort: аналитика не должна ронять основной поток.
+    """
+    try:
+        await executor.execute(
+            "INSERT INTO events (tg_id, type, meta) VALUES ($1, $2, $3::jsonb)",
+            tg_id,
+            event_type,
+            json.dumps(meta, ensure_ascii=False) if meta is not None else None,
+        )
+    except Exception:  # noqa: BLE001 — сбор аналитики не критичен для работы бота
+        pass
 
 
 # ── Платежи ЮKassa (этап 6) ──────────────────────────────────────────────────

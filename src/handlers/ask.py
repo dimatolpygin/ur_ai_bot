@@ -195,6 +195,7 @@ async def _collect_step(
 
     if d["off_topic"]:
         await repo.add_event(pool, u.id, "Off-topic (без списания)")
+        await repo.log_event(pool, u.id, repo.EVENT_OFFTOPIC)
         await state.set_state(AskStates.waiting_question)
         await state.set_data({})
         await message.answer(
@@ -234,6 +235,7 @@ async def _collect_step(
         }
     )
     await repo.add_event(pool, u.id, "Уточняющий вопрос")
+    await repo.log_event(pool, u.id, repo.EVENT_CLARIFY, {"step": step})
     await message.answer(
         texts.collect_question(nq),
         reply_markup=keyboards.collecting_kb(d["quick_replies"]),
@@ -267,7 +269,9 @@ async def _finalize_answer(
     history = await memory.get_history(redis, u.id)
     summary = _build_summary(case, original_question)
     try:
-        reply, sources = await ai.answer_with_search(history, summary, notify, pool)
+        reply, sources = await ai.answer_with_search(
+            history, summary, notify, pool, u.id
+        )
     except ai.AIError as e:
         logger.warning(f"ИИ не ответил @{u.username or '—'}: {e} — баланс не списан")
         await _safe_delete(status)
@@ -285,6 +289,10 @@ async def _finalize_answer(
     # В память кладём исходный вопрос пользователя (без служебной сводки и источников).
     await memory.append(redis, u.id, original_question, reply)
     await repo.add_event(pool, u.id, "Ответ ИИ выдан")
+    await repo.log_event(
+        pool, u.id, repo.EVENT_QUESTION,
+        {"sources": len(sources), "balance_after": new_balance},
+    )
 
     await _safe_delete(status)
     await state.set_state(AskStates.waiting_question)

@@ -55,6 +55,10 @@ async def start_payment(
         confirmation_url=confirmation_url,
         status=payment.get("status", "pending"),
     )
+    await repo.log_event(
+        pool, tg_id, repo.EVENT_PAYMENT_CREATED,
+        {"package": package, "amount": float(amount)},
+    )
     logger.info(
         f"💳 Платёж создан: tg_id={tg_id}, пакет {package} за {amount} ₽, yk_id={yk_id}"
     )
@@ -97,6 +101,10 @@ async def sync_payment(
                 f"yk_id={yk_id}), баланс {new_balance}"
             )
             await repo.add_event(pool, payment["tg_id"], "Оплата зачислена")
+            await repo.log_event(
+                pool, payment["tg_id"], repo.EVENT_PAYMENT_SUCCEEDED,
+                {"package": payment["package"], "amount": float(payment["amount"])},
+            )
             await _notify_success(bot, payment["tg_id"], payment["package"], new_balance)
         return "succeeded"
 

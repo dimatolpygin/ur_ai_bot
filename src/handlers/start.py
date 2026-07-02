@@ -29,6 +29,7 @@ async def cmd_start(message: Message, pool: asyncpg.Pool, state: FSMContext) -> 
 
     if is_new:
         text = texts.welcome_new(u.first_name, balance)
+        await repo.log_event(pool, u.id, repo.EVENT_REGISTER, {"free": balance})
         logger.info(
             f"🤖 Бот → @{u.username or '—'}: онбординг нового юзера, "
             f"начислено {balance} запросов"
