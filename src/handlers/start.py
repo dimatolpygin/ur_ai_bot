@@ -1,7 +1,7 @@
-"""Хендлеры /start и /id. Точка входа в бота.
+"""Хендлеры /start и /id — вход в бота.
 
-Этап 0 — заглушка: подтверждаем, что бот жив, регистрируем пользователя в БД.
-Приветствие, дисклеймер и главное меню появятся на этапе 1.
+Этап 1: новичку показываем приветствие + дисклеймер и начисляем N бесплатных
+запросов; вернувшемуся — короткое приветствие. Обоим показываем главное меню.
 """
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from .. import repo
+from .. import keyboards, repo, texts
+from ..config import settings
 from ..logger import logger
 
 router = Router()
@@ -21,13 +22,22 @@ router = Router()
 async def cmd_start(message: Message, pool: asyncpg.Pool, state: FSMContext) -> None:
     await state.clear()
     u = message.from_user
-    await repo.upsert_user(pool, u.id, u.username, u.first_name)
-    await repo.set_fsm_state(pool, u.id, "screen:start")
-    await message.answer(
-        "<b>Юр-бот на связи.</b>\n\n"
-        "Каркас запущен (этап 0). Приветствие, дисклеймер и меню — на следующем этапе."
+    is_new, balance = await repo.upsert_user(
+        pool, u.id, u.username, u.first_name, settings.free_requests_on_start
     )
-    logger.info(f"🤖 Бот → @{u.username or '—'}: заглушка /start")
+    await repo.set_fsm_state(pool, u.id, "screen:main_menu")
+
+    if is_new:
+        text = texts.welcome_new(u.first_name, balance)
+        logger.info(
+            f"🤖 Бот → @{u.username or '—'}: онбординг нового юзера, "
+            f"начислено {balance} запросов"
+        )
+    else:
+        text = texts.welcome_back(u.first_name, balance)
+        logger.info(f"🤖 Бот → @{u.username or '—'}: возврат, баланс {balance}")
+
+    await message.answer(text, reply_markup=keyboards.main_menu())
 
 
 @router.message(Command("id"))

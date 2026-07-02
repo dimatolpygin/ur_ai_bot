@@ -8,24 +8,40 @@ import asyncpg
 
 
 async def upsert_user(
-    pool: asyncpg.Pool, tg_id: int, username: str | None, first_name: str | None
-) -> None:
+    pool: asyncpg.Pool,
+    tg_id: int,
+    username: str | None,
+    first_name: str | None,
+    free_requests: int,
+) -> tuple[bool, int]:
     """Создаёт пользователя или обновляет его профиль и отметку активности.
 
-    Баланс на INSERT берётся из настройки free_requests_on_start (server_default в
-    миграции подставит его на этапе 1). Повторный /start НЕ обнуляет баланс.
+    Новичку на INSERT начисляется free_requests бесплатных запросов (значение
+    конфигурируемо, поэтому подставляем его явно, а не server_default'ом).
+    Повторный /start только освежает профиль и last_active — баланс НЕ трогает.
+
+    Возвращает (is_new, balance): is_new=True, если строка только что создана
+    (определяем по системному xmax=0 — на вставке он нулевой, на UPDATE — нет).
     """
-    await pool.execute(
+    row = await pool.fetchrow(
         """
-        INSERT INTO users (tg_id, username, first_name)
-        VALUES ($1, $2, $3)
+        INSERT INTO users (tg_id, username, first_name, balance)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (tg_id) DO UPDATE
         SET username = EXCLUDED.username,
             first_name = EXCLUDED.first_name,
             last_active = now()
+        RETURNING (xmax = 0) AS is_new, balance
         """,
-        tg_id, username, first_name,
+        tg_id, username, first_name, free_requests,
     )
+    return bool(row["is_new"]), int(row["balance"])
+
+
+async def get_balance(pool: asyncpg.Pool, tg_id: int) -> int:
+    """Текущий баланс запросов пользователя (0, если записи почему-то нет)."""
+    val = await pool.fetchval("SELECT balance FROM users WHERE tg_id = $1", tg_id)
+    return int(val) if val is not None else 0
 
 
 async def set_fsm_state(pool: asyncpg.Pool, tg_id: int, state: str | None) -> None:
