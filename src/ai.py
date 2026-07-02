@@ -336,14 +336,43 @@ async def collect_decide(collect_history: list[dict], case: dict) -> dict:
         "response_format": {"type": "json_object"},
     }
     timeout = aiohttp.ClientTimeout(total=settings.ai_request_timeout)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        data = await _post_chat(session, payload)
+    last_reason = "нет ответа"
 
-    raw = _extract_text(data)
-    logger.info(
-        f"Сбор ситуации ({settings.model_service}): токены {_usage_tokens(data)}"
-    )
-    return _normalize_decision(raw)
+    # Провайдер OpenRouter под flash-lite периодически (~20%) отдаёт
+    # finish_reason=error с пустым/обрезанным JSON. Ретраим на дешёвой модели —
+    # без ретраев сбор молча уходил бы в поиск, не задав уточнение.
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for attempt in range(1, settings.collect_retries + 1):
+            data = await _post_chat(session, payload)
+            choice = (data.get("choices") or [{}])[0]
+            finish = choice.get("finish_reason")
+            raw = (choice.get("message") or {}).get("content") or ""
+
+            if finish == "error" or not raw.strip():
+                last_reason = f"finish={finish}, пусто={not raw.strip()}"
+                logger.warning(
+                    f"Сбор ситуации: битый ответ ({last_reason}), попытка "
+                    f"{attempt}/{settings.collect_retries}"
+                )
+                continue
+
+            try:
+                decision = _normalize_decision(raw)
+            except AIError:
+                last_reason = "не разобрать JSON"
+                logger.warning(
+                    f"Сбор ситуации: {last_reason}, попытка "
+                    f"{attempt}/{settings.collect_retries}"
+                )
+                continue
+
+            logger.info(
+                f"Сбор ситуации ({settings.model_service}): токены "
+                f"{_usage_tokens(data)}, попытка {attempt}"
+            )
+            return decision
+
+    raise AIError(f"сбор: {last_reason} после {settings.collect_retries} попыток")
 
 
 def _loads_lenient(raw: str) -> dict:
