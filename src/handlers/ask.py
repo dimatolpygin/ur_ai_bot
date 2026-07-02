@@ -23,6 +23,7 @@ from redis.asyncio import Redis
 from .. import ai, keyboards, memory, repo, texts
 from ..config import settings
 from ..logger import logger
+from . import payment
 
 router = Router()
 
@@ -65,9 +66,7 @@ async def enter_ask(message: Message, pool: asyncpg.Pool, state: FSMContext) -> 
     if balance <= 0:
         await state.clear()
         await repo.set_fsm_state(pool, u.id, "screen:balance")
-        await message.answer(
-            texts.ask_need_payment(balance), reply_markup=keyboards.screen_nav()
-        )
+        await payment.send_balance_screen(message, pool)
         logger.info(f"🤖 Бот → @{u.username or '—'}: вопрос при balance=0 → оплата")
         return
 
@@ -309,9 +308,7 @@ async def _guard_balance(
         return False
     await state.clear()
     await repo.set_fsm_state(pool, u.id, "screen:balance")
-    await message.answer(
-        texts.ask_need_payment(balance), reply_markup=keyboards.screen_nav()
-    )
+    await payment.send_balance_screen(message, pool)
     logger.info(f"🤖 Бот → @{u.username or '—'}: balance=0 в ходе диалога → оплата")
     return True
 

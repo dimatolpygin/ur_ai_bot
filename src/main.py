@@ -8,8 +8,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from . import __version__
+from . import __version__, payments
 from .cache import close_redis, init_redis
 from .config import settings
 from .db import close_pool, init_pool
@@ -40,7 +41,23 @@ async def main() -> None:
     dp.update.middleware(LoggingMiddleware())
     dp.include_router(get_main_router())
 
+    # Фоновый поллер pending-платежей ЮKassa (домена нет → без вебхука, этап 6).
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(
+        payments.poll_pending,
+        "interval",
+        minutes=settings.payment_poll_interval_min,
+        args=[pool, bot],
+        id="poll_pending_payments",
+        max_instances=1,
+        coalesce=True,
+    )
+
     try:
+        scheduler.start()
+        log.info(
+            f"🔄 Поллер платежей запущен (каждые {settings.payment_poll_interval_min} мин)"
+        )
         await bot.delete_webhook(drop_pending_updates=True)
         await bot.set_my_commands([
             BotCommand(command="start", description="Главный экран"),
@@ -52,6 +69,7 @@ async def main() -> None:
         await dp.start_polling(bot, allowed_updates=allowed)
     finally:
         log.info("Останавливаю бота...")
+        scheduler.shutdown(wait=False)
         await close_redis()
         await close_pool()
         await bot.session.close()

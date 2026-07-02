@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 import asyncpg
 
 
@@ -79,3 +81,120 @@ async def add_event(pool: asyncpg.Pool, tg_id: int, action: str) -> None:
         "INSERT INTO user_events (tg_id, action) VALUES ($1, $2)",
         tg_id, action,
     )
+
+
+# ── Платежи ЮKassa (этап 6) ──────────────────────────────────────────────────
+
+async def create_payment(
+    pool: asyncpg.Pool,
+    *,
+    yookassa_payment_id: str,
+    idempotence_key: str,
+    tg_id: int,
+    package: int,
+    amount: Decimal | int | float,
+    confirmation_url: str | None,
+    status: str = "pending",
+) -> int:
+    """Сохраняет строку создаваемого платежа (pending). Возвращает её id."""
+    row = await pool.fetchrow(
+        """
+        INSERT INTO payments (
+            yookassa_payment_id, idempotence_key, tg_id, package, amount,
+            confirmation_url, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+        """,
+        yookassa_payment_id,
+        idempotence_key,
+        tg_id,
+        package,
+        Decimal(str(amount)),
+        confirmation_url,
+        status,
+    )
+    return int(row["id"])
+
+
+async def get_payment_by_yk_id(
+    pool: asyncpg.Pool, yk_id: str
+) -> asyncpg.Record | None:
+    return await pool.fetchrow(
+        "SELECT * FROM payments WHERE yookassa_payment_id = $1", yk_id
+    )
+
+
+async def get_pending_payments(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    """Незавершённые платежи — их опрашивает фоновый поллер."""
+    return await pool.fetch(
+        "SELECT * FROM payments WHERE status = 'pending' ORDER BY id"
+    )
+
+
+async def get_user_payments(
+    pool: asyncpg.Pool, tg_id: int, limit: int = 10
+) -> list[asyncpg.Record]:
+    """История покупок пользователя (для экрана «Баланс и оплата»)."""
+    return await pool.fetch(
+        """
+        SELECT package, amount, status, created_at
+        FROM payments
+        WHERE tg_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        """,
+        tg_id, limit,
+    )
+
+
+async def mark_payment_canceled(pool: asyncpg.Pool, yk_id: str) -> None:
+    await pool.execute(
+        "UPDATE payments SET status = 'canceled', updated_at = now() "
+        "WHERE yookassa_payment_id = $1 AND status = 'pending'",
+        yk_id,
+    )
+
+
+async def credit_payment(
+    pool: asyncpg.Pool, yk_id: str
+) -> tuple[int | None, bool]:
+    """Атомарно зачисляет пакет на баланс по успешному платежу. Идемпотентно.
+
+    Берёт строку платежа под блокировку (FOR UPDATE). Если уже зачислено
+    (credited=true) — ничего не делает: повторный вызов (поллер + кнопка
+    «Проверить» одновременно, повторный succeeded) НЕ пополняет второй раз.
+    Иначе: balance += package, is_paying=true, credited=true, status=succeeded.
+
+    Возвращает (новый_баланс, credited_now):
+      credited_now=True  — баланс пополнен этим вызовом (уведомить пользователя);
+      credited_now=False — платёж не найден (баланс=None) либо уже был зачислен.
+    """
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            pay = await conn.fetchrow(
+                "SELECT * FROM payments WHERE yookassa_payment_id = $1 FOR UPDATE",
+                yk_id,
+            )
+            if pay is None:
+                return None, False
+            if pay["credited"]:
+                bal = await conn.fetchval(
+                    "SELECT balance FROM users WHERE tg_id = $1", pay["tg_id"]
+                )
+                return (int(bal) if bal is not None else 0), False
+
+            new_balance = await conn.fetchval(
+                """
+                UPDATE users SET balance = balance + $2, is_paying = true
+                WHERE tg_id = $1
+                RETURNING balance
+                """,
+                pay["tg_id"], pay["package"],
+            )
+            await conn.execute(
+                "UPDATE payments SET status = 'succeeded', credited = true, "
+                "updated_at = now() WHERE id = $1",
+                pay["id"],
+            )
+            return (int(new_balance) if new_balance is not None else 0), True

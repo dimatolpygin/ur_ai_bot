@@ -20,6 +20,7 @@ from aiogram.types import LinkPreviewOptions, Message
 
 from .. import ai, keyboards, repo, texts
 from ..logger import logger
+from . import payment
 
 router = Router()
 
@@ -50,9 +51,7 @@ async def open_employer(
     if balance <= 0:
         await state.clear()
         await repo.set_fsm_state(pool, u.id, "screen:balance")
-        await message.answer(
-            texts.ask_need_payment(balance), reply_markup=keyboards.screen_nav()
-        )
+        await payment.send_balance_screen(message, pool)
         logger.info(f"🤖 Бот → @{u.username or '—'}: работодатель при balance=0 → оплата")
         return
 
@@ -76,9 +75,7 @@ async def check_another(
     if balance <= 0:
         await state.clear()
         await repo.set_fsm_state(pool, u.id, "screen:balance")
-        await message.answer(
-            texts.ask_need_payment(balance), reply_markup=keyboards.screen_nav()
-        )
+        await payment.send_balance_screen(message, pool)
         return
     await message.answer(
         texts.employer_prompt(balance), reply_markup=keyboards.employer_input()
@@ -109,9 +106,7 @@ async def handle_employer(
     if balance <= 0:
         await state.clear()
         await repo.set_fsm_state(pool, u.id, "screen:balance")
-        await message.answer(
-            texts.ask_need_payment(balance), reply_markup=keyboards.screen_nav()
-        )
+        await payment.send_balance_screen(message, pool)
         return
 
     await message.bot.send_chat_action(message.chat.id, "typing")

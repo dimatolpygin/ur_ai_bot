@@ -22,17 +22,6 @@ async def _mark(pool: asyncpg.Pool, tg_id: int, screen: str) -> None:
     await repo.set_fsm_state(pool, tg_id, f"screen:{screen}")
 
 
-@router.message(F.text == texts.BTN_BALANCE)
-async def open_balance(message: Message, pool: asyncpg.Pool) -> None:
-    u = message.from_user
-    balance = await repo.get_balance(pool, u.id)
-    await _mark(pool, u.id, "balance")
-    await message.answer(
-        texts.screen_balance(balance), reply_markup=keyboards.screen_nav()
-    )
-    logger.info(f"🤖 Бот → @{u.username or '—'}: экран «Баланс и оплата» ({balance})")
-
-
 @router.message(F.text == texts.BTN_HELP)
 async def open_help(message: Message, pool: asyncpg.Pool) -> None:
     u = message.from_user

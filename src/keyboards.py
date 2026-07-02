@@ -6,9 +6,19 @@
 """
 from __future__ import annotations
 
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from . import texts
+
+# Префиксы callback_data ветки оплаты (этап 6).
+CB_BUY = "buy:"  # buy:<package>
+CB_CHECK = "check:"  # check:<yookassa_payment_id>
+CB_CANCEL = "cancel:"  # cancel:<yookassa_payment_id>
 
 
 def main_menu() -> ReplyKeyboardMarkup:
@@ -68,6 +78,35 @@ def employer_result() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
         input_field_placeholder="Проверить другого — название, ИНН или ссылка",
+    )
+
+
+def packages_kb(prices: dict) -> InlineKeyboardMarkup:
+    """Inline-кнопки покупки пакетов (по строке на пакет): «Пакет N · X ₽»."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"Пакет {pkg} · {texts._fmt_price(prices[pkg])} ₽",
+                callback_data=f"{CB_BUY}{pkg}",
+            )
+        ]
+        for pkg in sorted(prices)
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def payment_actions_kb(confirmation_url: str, yk_id: str) -> InlineKeyboardMarkup:
+    """Кнопки счёта: оплатить (URL), проверить оплату, отмена."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Оплатить", url=confirmation_url)],
+            [
+                InlineKeyboardButton(
+                    text="Проверить оплату", callback_data=f"{CB_CHECK}{yk_id}"
+                )
+            ],
+            [InlineKeyboardButton(text="Отмена", callback_data=f"{CB_CANCEL}{yk_id}")],
+        ]
     )
 
 
