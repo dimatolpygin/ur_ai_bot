@@ -4,9 +4,9 @@
 > прочтения **обязательно** сверить с реальностью: `git tag -l "stage-*"`,
 > `git log --oneline -20` — таблица ниже может быть устаревшей.
 
-**Последнее обновление**: 2026-07-02 (взят в работу Этап 0 — каркас)
-**Текущий этап**: Этап 0 — Каркас репозитория (🚧 в работе)
-**Следующий шаг**: Собрать каркас `src/` (config, logger, db, cache, migrate, main, middlewares, handlers/start) по образцу club_bot + Docker/Compose dev с hot-reload + Alembic-миграция `0001` (создание схемы `urist_bot` + таблицы `users`, `fsm_states`). Затем запустить стек и прогнать критерии приёмки. Критерии — в [`07_ROADMAP.md`](07_ROADMAP.md#этап-0--каркас-репозитория).
+**Последнее обновление**: 2026-07-02 (закрыт Этап 0 — каркас, tag stage-0-done)
+**Текущий этап**: Этап 1 — Онбординг + меню + БД юзера (☐ не начат)
+**Следующий шаг**: Взять Этап 1 в работу — приветствие + дисклеймер + начисление N бесплатных запросов на первый `/start`, главное меню reply-клавиатурой (4 ветки на экраны-заглушки, без тупиков). Критерии — в [`07_ROADMAP.md`](07_ROADMAP.md#этап-1--онбординг--главное-меню--бд-пользователя).
 
 ---
 
@@ -16,7 +16,7 @@
 
 | # | Этап | Статус | Закрывающий тег | Последний коммит | Дата закрытия |
 |---|---|---|---|---|---|
-| 0 | Каркас репозитория | 🚧 | `stage-0-done` | — | — |
+| 0 | Каркас репозитория | ✅ | `stage-0-done` | `80506b3` | 2026-07-02 |
 | 1 | Онбординг + меню + БД юзера | ☐ | `stage-1-done` | — | — |
 | 2 | Базовый ИИ-ответ + память + списание | ☐ | `stage-2-done` | — | — |
 | 3 | ИИ-агент с веб-поиском (Tavily) | ☐ | `stage-3-done` | — | — |
@@ -32,10 +32,7 @@
 
 ## Активная работа
 
-**Этап**: 0 — Каркас репозитория, в работе.
-**Ветка**: `dev`
-**Сводка задач**: каркас `src/` (aiogram 3 polling, config/logger/db/cache/migrate/middlewares/handlers) по образцу club_bot; Docker/Compose dev с hot-reload; Alembic-миграция `0001` (схема `urist_bot` + `users`, `fsm_states`); `/start` отвечает заглушкой.
-**Как верифицируем**: `docker compose -f docker-compose.dev.yml up --build` поднимает бота/pg/redis; SQL показывает схему `urist_bot`; `/start` в Telegram отвечает; правка `src/` перезапускает бота; в логах видно входящее с username/user_id.
+Пока нет. Этап 0 закрыт, ждём отмашку на старт Этапа 1.
 
 ## Известные блокеры
 
@@ -43,7 +40,7 @@
 
 ## История закрытий
 
-Пока пусто — ни один этап не закрыт.
+2026-07-02 — Этап 0: Каркас репозитория — tag stage-0-done — миграция `0001_init` (схема `urist_bot` + таблицы `users` с полями balance/is_paying, `fsm_states`, `user_events`). Каркас `src/` по образцу club_bot: config (pydantic-settings, валидация имени схемы), logger (Loguru, русский формат), db (asyncpg pool, search_path на свою схему, max_size=20 под ориентир 500 юзеров), cache (Redis), migrate (Alembic auto-upgrade при старте до event loop), middlewares (LoggingMiddleware + запись в user_events), main (aiogram 3, RedisStorage FSM, HTML parse_mode, polling). Docker/Compose dev с hot-reload через watchfiles. Нюанс: `docker compose` требует явный `-p urist_bot` — имя папки кириллическое («юр.агент»), автоимя проекта выходит пустым. Ещё: убрал явный пин `aiohttp` — конфликтовал с `aiogram 3.15` (требует aiohttp<3.11). Verification: `@Polarasing` (id=2042819654, Kira) отправил /start → получил ответ-заглушку; лог `👤 @Polarasing (id:2042819654, Kira) → /start`; в `urist_bot.users` создалась запись (balance=0); в `user_events` — «Команда /start». Схема и таблицы подтверждены `\dn`/`\dt`. Hot-reload: touch src → «1 change detected» → рестарт. Все 5 критериев сошлись.
 
 ## Протокол обновления
 

@@ -40,9 +40,9 @@
 **Критерии приёмки** (закрытие → tag `stage-0-done`):
 - [x] `docker compose -f docker-compose.dev.yml up --build` поднимает бота, pg, redis без ошибок. _(проверено: стек `-p urist_bot` поднялся)_
 - [x] При старте Alembic автоматически создаёт схему `urist_bot` в Postgres (проверяется SQL). _(проверено: `\dn` → urist_bot; таблицы users/fsm_states/user_events/alembic_version)_
-- [ ] `/start` в Telegram отвечает заглушкой. _(живая проверка: человек)_
+- [x] `/start` в Telegram отвечает заглушкой. _(проверено: @Polarasing получил ответ)_
 - [x] Изменение файла в `src/` перезапускает бота (hot-reload работает). _(проверено: touch → «1 change detected» → рестарт)_
-- [ ] В логах Loguru видно входящее сообщение с username/user_id/first_name. _(появится при первом сообщении — живая проверка)_
+- [x] В логах Loguru видно входящее сообщение с username/user_id/first_name. _(проверено: `👤 @Polarasing (id:2042819654, Kira) → /start`)_
 
 ---
 
