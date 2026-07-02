@@ -49,6 +49,62 @@ SEARCH_SYSTEM_PROMPT = SYSTEM_PROMPT + (
     "найденные источники, не выдумывай нормы и суммы."
 )
 
+# ── Служебный слой (COLLECTING, этап 4): сбор ситуации на flash-lite ──────────
+# Дешёвая модель добирает недостающие детали расплывчатого вопроса и возвращает
+# СТРОГО JSON-контракт (см. AGENT_PIPELINE §4.2). Финальный ответ — не её работа.
+COLLECT_SYSTEM_PROMPT = (
+    "Ты — помощник по трудовым и бытовым юридическим вопросам для рабочих людей "
+    "(охранники, водители, монтажники и другие «синие воротнички»). По сообщениям "
+    "пользователя пойми его ситуацию и реши: данных уже достаточно для точного "
+    "поиска ответа, или нужно задать ОДИН уточняющий вопрос.\n\n"
+    "Верни СТРОГО один JSON-объект, без пояснений и без Markdown, по схеме:\n"
+    "{\n"
+    '  "off_topic": true|false,   // true, если сообщение НЕ про работу, право, '
+    "трудовые отношения, деньги за работу и т.п.\n"
+    '  "enough": true|false,      // true, если данных уже хватает для ответа\n'
+    '  "confidence": 0.0..1.0,    // уверенность, что данных ХВАТАЕТ для точного '
+    "ответа (не просто что понял тему). Задаёшь уточнение — ставь НИЗКИЙ (< 0.7)\n"
+    '  "case": {\n'
+    '     "problem_type": строка|null,  // не платят зарплату | увольнение | штрафы '
+    "| проверка работодателя | трудовой договор | отпуск/больничный | другое\n"
+    '     "region": строка|null,\n'
+    '     "employment": строка|null,     // официально | неофициально | ГПХ | '
+    "самозанятый | неизвестно\n"
+    '     "timeline": строка|null,        // когда произошло, сроки\n'
+    '     "documents": строка|null,       // какие документы есть\n'
+    '     "goal": строка|null,            // чего хочет добиться\n'
+    '     "details": строка|null          // краткая суть своими словами\n'
+    "  },\n"
+    '  "missing": [строки],          // каких важных слотов не хватает\n'
+    '  "next_question": строка,      // ОДИН простой уточняющий вопрос ('
+    'пусто, если enough=true)\n'
+    '  "quick_replies": [строки]     // 2-4 коротких варианта ответа (или [])\n'
+    "}\n\n"
+    "Правила:\n"
+    "- Уточняющих вопросов — МИНИМУМ. Спрашивай только по-настоящему важное: обычно "
+    "хватает понять тип проблемы и суть. Регион и сроки важны для сроков давности и "
+    "практики — уточняй их, только если это реально нужно для ответа.\n"
+    "- Если пользователь описал ситуацию ясно — сразу enough=true, confidence высокий, "
+    "next_question пустой. Если чего-то важного не хватает — enough=false, confidence "
+    "низкий (< 0.7) и задай ОДИН вопрос.\n"
+    "- Вопрос задавай простым, человеческим языком (аудитория 35–50 лет без юр-образования).\n"
+    "- quick_replies — короткие (1-3 слова), которыми реально удобно ответить.\n"
+    "- Не повторяй уже заданный вопрос и не спрашивай то, что уже есть в карточке case. "
+    "Если пользователь уходит от ответа — считай, что данных достаточно (enough=true)."
+)
+
+# Слоты карточки — фиксированный набор (AGENT_PIPELINE §4.1).
+_CASE_SLOTS = (
+    "problem_type",
+    "region",
+    "employment",
+    "timeline",
+    "documents",
+    "goal",
+    "details",
+)
+
+
 # Схема инструмента (OpenAI-совместимый function calling).
 WEB_SEARCH_TOOL = {
     "type": "function",
@@ -248,6 +304,103 @@ async def answer_with_search(
         f"Агент: форс-финал; токены≈{total_tokens}; источников {len(sources)}"
     )
     return text, _dedup(sources)
+
+
+async def collect_decide(collect_history: list[dict], case: dict) -> dict:
+    """Служебное решение сбора ситуации (этап 4) на flash-lite.
+
+    Принимает диалог сбора (реплики юзера и наши уточнения) + уже собранную карточку
+    `case`. Возвращает нормализованный dict по контракту §4.2: off_topic / enough /
+    confidence / case / missing / next_question / quick_replies. Дешёвая модель, JSON.
+    """
+    if not settings.openrouter_api_key:
+        raise AIError("OPENROUTER_API_KEY не задан")
+
+    messages: list[dict] = [
+        {"role": "system", "content": COLLECT_SYSTEM_PROMPT},
+        {
+            "role": "system",
+            "content": (
+                "Уже собранная карточка case (учитывай, не спрашивай повторно):\n"
+                + json.dumps(case, ensure_ascii=False)
+            ),
+        },
+    ]
+    messages.extend(collect_history)
+
+    payload = {
+        "model": settings.model_service,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": settings.collect_max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    timeout = aiohttp.ClientTimeout(total=settings.ai_request_timeout)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        data = await _post_chat(session, payload)
+
+    raw = _extract_text(data)
+    logger.info(
+        f"Сбор ситуации ({settings.model_service}): токены {_usage_tokens(data)}"
+    )
+    return _normalize_decision(raw)
+
+
+def _loads_lenient(raw: str) -> dict:
+    """Парсит JSON от модели, терпимо к обёрткам (```json …``` / текст вокруг)."""
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+    # Достаём первый {...}-блок, если модель обернула JSON в текст/фенсы.
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end > start:
+        try:
+            obj = json.loads(raw[start : end + 1])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+    raise AIError("сбор: не разобрать JSON")
+
+
+def _normalize_decision(raw: str) -> dict:
+    """Приводит ответ модели к безопасному контракту (гарантированные ключи/типы)."""
+    parsed = _loads_lenient(raw)
+
+    case_in = parsed.get("case")
+    case_in = case_in if isinstance(case_in, dict) else {}
+    case: dict[str, str | None] = {}
+    for slot in _CASE_SLOTS:
+        v = case_in.get(slot)
+        case[slot] = v.strip() if isinstance(v, str) and v.strip() else None
+
+    conf = parsed.get("confidence")
+    try:
+        conf = float(conf)
+    except (TypeError, ValueError):
+        conf = 0.0
+    conf = min(max(conf, 0.0), 1.0)
+
+    qr = parsed.get("quick_replies")
+    qr = qr if isinstance(qr, list) else []
+    quick_replies = [str(x).strip() for x in qr if str(x).strip()][:4]
+
+    missing = parsed.get("missing")
+    missing = [str(x) for x in missing] if isinstance(missing, list) else []
+
+    return {
+        "off_topic": bool(parsed.get("off_topic")),
+        "enough": bool(parsed.get("enough")),
+        "confidence": conf,
+        "case": case,
+        "missing": missing,
+        "next_question": str(parsed.get("next_question") or "").strip(),
+        "quick_replies": quick_replies,
+    }
 
 
 def _parse_query(call: dict) -> str:

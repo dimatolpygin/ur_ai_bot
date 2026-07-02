@@ -45,3 +45,20 @@ def ask_screen() -> ReplyKeyboardMarkup:
         resize_keyboard=True,
         input_field_placeholder="Напишите вопрос одним сообщением",
     )
+
+
+def collecting_kb(quick_replies: list[str]) -> ReplyKeyboardMarkup:
+    """Клавиатура сбора ситуации (этап 4): варианты ответа + escape-кнопки.
+
+    quick_replies — подсказки от служебной модели (каждая своей строкой, чтобы
+    крупно читались). Всегда есть выход: «Ответить сейчас» (оборвать сбор) и
+    «Отмена» (в главное меню) — тупиков нет.
+    """
+    rows = [[KeyboardButton(text=qr)] for qr in quick_replies[:4]]
+    rows.append([KeyboardButton(text=texts.BTN_ANSWER_NOW)])
+    rows.append([KeyboardButton(text=texts.BTN_CANCEL)])
+    return ReplyKeyboardMarkup(
+        keyboard=rows,
+        resize_keyboard=True,
+        input_field_placeholder="Ответьте кнопкой или напишите своими словами",
+    )
