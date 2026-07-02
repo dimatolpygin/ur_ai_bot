@@ -4,9 +4,9 @@
 > прочтения **обязательно** сверить с реальностью: `git tag -l "stage-*"`,
 > `git log --oneline -20` — таблица ниже может быть устаревшей.
 
-**Последнее обновление**: 2026-07-02 (Этап 3 взят в работу)
-**Текущий этап**: Этап 3 — ИИ-агент с веб-поиском (Tavily + капы) (🚧 в работе)
-**Следующий шаг**: Дореализовать/проверить `web_search` (Tavily основной, Exa/Firecrawl запасные), tool-calling петлю на `gemini-2.5-flash` с капом шагов + токен-бюджетом, статусы «ищу информацию…», ссылки, списание 1 за весь поиск. **Блокер живой проверки**: в `.env` нет ключей поисковиков (ждём `TAVILY_API_KEY` или запасной). Дизайн — [`AGENT_PIPELINE.md`](AGENT_PIPELINE.md); критерии — [`07_ROADMAP.md`](07_ROADMAP.md#этап-3--ии-агент-с-веб-поиском-tavily--капы).
+**Последнее обновление**: 2026-07-02 (закрыт Этап 3 — веб-поиск, tag stage-3-done)
+**Текущий этап**: Этап 4 — Адаптивный сбор ситуации (FSM + flash-lite) (☐ не начат)
+**Следующий шаг**: Взять Этап 4 в работу — состояние `COLLECTING`: `gemini-2.5-flash-lite` возвращает structured JSON (enough/confidence/case-слоты/next_question/quick_replies/off_topic), кап `MAX_COLLECT_STEPS` (≤2–3), ранний выход по confidence, кнопка «Ответить сейчас», off-topic → редирект без списания, сводка `case` → в поиск. Дизайн — [`AGENT_PIPELINE.md`](AGENT_PIPELINE.md) §4; критерии — [`07_ROADMAP.md`](07_ROADMAP.md#этап-4--адаптивный-сбор-ситуации-fsm--flash-lite).
 
 ---
 
@@ -19,7 +19,7 @@
 | 0 | Каркас репозитория | ✅ | `stage-0-done` | `80506b3` | 2026-07-02 |
 | 1 | Онбординг + меню + БД юзера | ✅ | `stage-1-done` | `66ebcc3` | 2026-07-02 |
 | 2 | Базовый ИИ-ответ + память + списание | ✅ | `stage-2-done` | — | 2026-07-02 |
-| 3 | ИИ-агент с веб-поиском (Tavily) | 🚧 | `stage-3-done` | — | — |
+| 3 | ИИ-агент с веб-поиском (Tavily) | ✅ | `stage-3-done` | — | 2026-07-02 |
 | 4 | Адаптивный сбор ситуации (FSM) | ☐ | `stage-4-done` | — | — |
 | 5 | «Проверить работодателя» | ☐ | `stage-5-done` | — | — |
 | 6 | Оплата ЮKassa (пакеты 10/20/30) | ☐ | `stage-6-done` | — | — |
@@ -32,19 +32,15 @@
 
 ## Активная работа
 
-Этап 3 — ИИ-агент с веб-поиском. `src/search.py` — единый `run_web_search(query)`
-с fallback Tavily→Exa→Firecrawl (только провайдеры с ключом), нормализация
-результатов. `src/ai.py` — `answer_with_search`: tool-calling петля на `model_answer`
-с инструментом `web_search`, кап `max_search_steps` + токен-бюджет, форс-финал.
-`src/handlers/ask.py` — статусы «ищу…/проверяю…/формирую…», ссылки, списание после
-успеха (одна точка). Ключи временно из `.env` (на Этапе 7 → `app_settings`).
+Пока нет. Этап 3 закрыт, ждём отмашку на старт Этапа 4.
 
 ## Известные блокеры
 
-Нет. (Блокер с ключами снят: заказчик прислал Tavily/Exa/Firecrawl, добавлены в
-`.env`, все три проверены — по 5 результатов. Ждём живую проверку в Telegram.)
+Нет.
 
 ## История закрытий
+
+2026-07-02 — Этап 3: ИИ-агент с веб-поиском (Tavily + Exa/Firecrawl) — tag stage-3-done — `src/search.py`: единый `run_web_search(query)` с fallback-цепочкой Tavily→Exa→Firecrawl (провайдер участвует только при наличии ключа; первый непустой результат выигрывает; нормализация к `{title,url,snippet}`, клип 500 симв.; логи выбранного провайдера/переключений). `src/ai.py` `answer_with_search`: tool-calling петля на `model_answer` с инструментом `web_search`, кап `max_search_steps`(=4) + токен-бюджет(`search_token_budget`), форс-финал (`tool_choice=none`) при упоре в кап/бюджет; **первый шаг форсирует поиск** (`tool_choice`=web_search) — иначе Gemini ленится и отвечает по устаревшей памяти (грундинг §1.2); возвращает `(текст, источники)`, dedup URL с порядком. `src/handlers/ask.py`: статусы «Ищу информацию…/Проверяю источники…» редактированием одного сообщения (не молчим §5.3), блок «Источники» (`texts.sources_block`), превью ссылок отключено (`LinkPreviewOptions`), списание — одна точка после успеха за весь поиск. Config: `max_search_steps/search_results_per_query/search_token_budget/search_timeout`. Ключи из `.env` (заказчик прислал Tavily/Exa/Firecrawl; `web_search_api-key.txt` → в `.gitignore`; на этапе 7 переедут в `app_settings` с горячей заменой). Verification (в контейнере): все 3 ключа валидны (по 5 рез.); агент «МРОТ 2026» → Tavily → ответ 27 093 ₽ + 5 источников; форс-поиск на шаге 0; fallback Tavily 401 → Exa автоматически. Живая проверка человеком (@Polarasing): «МРОТ 2026» → статус → ответ + 5 источников, баланс 4→3 (одно списание за весь поиск), лог «Поиск Tavily → 5 рез.»/«Агент: финал на шаге 1»/«источников 5». Все 5 критериев сошлись.
 
 2026-07-02 — Этап 2: Базовый ИИ-ответ + память + списание — tag stage-2-done — клиент OpenRouter `src/ai.py` (aiohttp, модель `model_answer`=`gemini-2.5-flash`, системный промпт: русский, простой язык под аудиторию 35–50, строго HTML-теги Telegram без Markdown, осторожная оговорка, без эмодзи; капы `ai_max_tokens`/`ai_request_timeout`; класс `AIError`). Память диалога `src/memory.py` в Redis (ключ `urist:dialog:{tg_id}`, JSON-хвост последних `dialog_memory_messages`, TTL `dialog_ttl_seconds`=3 дня; `get_history`/`append`/`clear`). Списание — единственная точка `repo.charge_one` (атомарный `UPDATE ... WHERE balance>0 RETURNING balance`, None при нуле — защита от гонки и минуса). Ветка `src/handlers/ask.py` (FSM `AskStates.waiting_question`): вход из меню → при `balance=0` уводит в оплату, иначе приглашение; текст-вопрос → статус «готовлю ответ» + typing → `ai.answer(history, q)` → при успехе `charge_one` → `memory.append` → ответ + футер с остатком; `AIError` → сообщение без списания; «Новый диалог» → `memory.clear`; кнопки-ярлыки (`_MENU_LABELS`) в состоянии не уходят в модель, «Главное меню» проваливается в menu-роутер. `open_ask`-заглушка убрана из menu.py; ask-роутер включён до menu. Config: `ai_base_url/timeout/max_tokens/temperature`, `dialog_memory_messages/ttl`. Verification (в контейнере): реальный ответ OpenRouter (HTML, RU); память 4 msg верный порядок; `charge_one` 2→1→0→None. Живая проверка человеком (@Polarasing): 4 ответа ИИ, уточнение по контексту «А если откажут?» (память), «Новый диалог» ×2, «Главное меню» ×5 без ухода в ИИ, баланс убывает. Все 5 критериев сошлись.
 
