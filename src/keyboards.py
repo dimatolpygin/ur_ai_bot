@@ -47,6 +47,30 @@ def ask_screen() -> ReplyKeyboardMarkup:
     )
 
 
+def employer_input() -> ReplyKeyboardMarkup:
+    """Экран ввода работодателя: единственный выход — «Главное меню» (без тупиков)."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=texts.BTN_MAIN_MENU)]],
+        resize_keyboard=True,
+        input_field_placeholder="Название, ИНН или ссылка одним сообщением",
+    )
+
+
+def employer_result() -> ReplyKeyboardMarkup:
+    """Экран после сводки: проверить ещё, перейти к вопросам или в меню."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=texts.BTN_CHECK_ANOTHER)],
+            [
+                KeyboardButton(text=texts.BTN_ASK),
+                KeyboardButton(text=texts.BTN_MAIN_MENU),
+            ],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Проверить другого — название, ИНН или ссылка",
+    )
+
+
 def collecting_kb(quick_replies: list[str]) -> ReplyKeyboardMarkup:
     """Клавиатура сбора ситуации (этап 4): варианты ответа + escape-кнопки.
 

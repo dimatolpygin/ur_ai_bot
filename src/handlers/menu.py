@@ -22,14 +22,6 @@ async def _mark(pool: asyncpg.Pool, tg_id: int, screen: str) -> None:
     await repo.set_fsm_state(pool, tg_id, f"screen:{screen}")
 
 
-@router.message(F.text == texts.BTN_EMPLOYER)
-async def open_employer(message: Message, pool: asyncpg.Pool) -> None:
-    u = message.from_user
-    await _mark(pool, u.id, "employer")
-    await message.answer(texts.screen_employer(), reply_markup=keyboards.screen_nav())
-    logger.info(f"🤖 Бот → @{u.username or '—'}: экран «Проверить работодателя»")
-
-
 @router.message(F.text == texts.BTN_BALANCE)
 async def open_balance(message: Message, pool: asyncpg.Pool) -> None:
     u = message.from_user
