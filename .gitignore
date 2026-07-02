@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Секреты и окружение
+.env
+.env.local
+.secrets/
+
+# Исходные материалы заказчика (доступы, переписка) — не в git
+что_собрать.txt
+переписка.txt
+тз.txt
+заказ.txt
+
+# IDE / OS
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
