@@ -1,0 +1,55 @@
+# Локальная разработка: бот + свои Postgres и Redis одной командой.
+# Hot-reload: изменения в src/ и migrations/ автоматически перезапускают бота
+# (аналог `npm run dev`) — код смонтирован в контейнер, watchfiles следит за файлами.
+#
+# Запуск:    docker compose -f docker-compose.dev.yml up --build
+# Логи:      уже в терминале (Ctrl+C — остановить)
+# Стоп:      docker compose -f docker-compose.dev.yml down
+# Снести БД: docker compose -f docker-compose.dev.yml down -v
+#
+# ВНИМАНИЕ: порты pg/redis на хост НЕ пробрасываются (на ПК уже заняты другими
+# контейнерами). Бот ходит в свои pg/redis по именам сервисов.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+
+  bot:
+    build: .
+    env_file: .env
+    # environment имеет приоритет над .env — локально бот ходит в свои pg/redis.
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      REDIS_URL: redis://redis:6379/0
+      # Polling обязателен на Windows: события файлов через bind-mount (inotify)
+      # в Docker Desktop не пробрасываются, без polling hot-reload не сработает.
+      WATCHFILES_FORCE_POLLING: "true"
+    # Hot-reload: следим за исходниками и перезапускаем процесс при изменениях.
+    command: ["watchfiles", "--filter", "python", "python -m src.main", "src", "migrations"]
+    volumes:
+      - ./src:/app/src
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pgdata_dev:
