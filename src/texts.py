@@ -260,6 +260,132 @@ PAY_ERROR = (
 )
 
 
+# ── Админка /admin (этап 7) ───────────────────────────────────────────────────
+
+ADMIN_DENIED = "Команда доступна только администратору."
+
+# Понятные названия провайдеров поиска в шапке админки.
+_PROVIDER_TITLE = {"tavily": "Tavily", "exa": "Exa", "firecrawl": "Firecrawl"}
+
+
+def mask_key(value: str) -> str:
+    """Маскирует ключ для показа: «····abcd» (последние 4 символа) или «не задан»."""
+    value = (value or "").strip()
+    if not value:
+        return "<i>не задан</i>"
+    tail = value[-4:] if len(value) >= 4 else value
+    return f"<code>····{tail}</code>"
+
+
+def _credits_line(credits: tuple[float, float] | None) -> str:
+    if credits is None:
+        return "· OpenRouter: <i>недоступно</i>"
+    remaining, usage = credits
+    return f"· OpenRouter: <b>${remaining:.2f}</b> (потрачено ${usage:.2f})"
+
+
+def admin_header(
+    counts: tuple[int, int, int],
+    credits: tuple[float, float] | None,
+    usage: dict,
+    prices: dict,
+    price_per_request: int,
+    keys: dict,
+) -> str:
+    """Шапка админки: пользователи, балансы сервисов, текущие цены и ключи."""
+    total, paying, nonpaying = counts
+    price_lines = "\n".join(
+        f"· Пакет {pkg}: <b>{_fmt_price(prices[pkg])} ₽</b>"
+        if pkg in prices
+        else f"· Пакет {pkg}: <i>не задана</i>"
+        for pkg in (10, 20, 30)
+    )
+    usage_lines = "\n".join(
+        f"· {_PROVIDER_TITLE[p]}: израсходовано <b>{usage.get(p, 0)}</b> запросов"
+        for p in ("tavily", "exa", "firecrawl")
+    )
+    key_lines = "\n".join(
+        f"· {_PROVIDER_TITLE[p]}: {mask_key(keys.get(p, ''))}"
+        for p in ("tavily", "exa", "firecrawl")
+    )
+    return (
+        "<b>Админка URIST2026</b>\n\n"
+        "<b>Пользователи</b>\n"
+        f"· Всего: <b>{total}</b>\n"
+        f"· Платящих: <b>{paying}</b>\n"
+        f"· Неплатящих: <b>{nonpaying}</b>\n\n"
+        "<b>Балансы сервисов</b>\n"
+        f"{_credits_line(credits)}\n"
+        f"{usage_lines}\n\n"
+        "<b>Цены</b>\n"
+        f"{price_lines}\n"
+        f"· Цена 1 запроса: <b>{price_per_request}</b>\n\n"
+        "<b>Ключи поиска</b>\n"
+        f"{key_lines}\n\n"
+        "Выберите, что изменить."
+    )
+
+
+def admin_ask_price(package: int, current) -> str:
+    cur = f"{_fmt_price(current)} ₽" if current is not None else "не задана"
+    return (
+        f"<b>Цена пакета {package} запросов</b>\n\n"
+        f"Текущая: <b>{cur}</b>.\n\n"
+        "Пришлите новую цену в рублях одним сообщением (например, <code>299</code> "
+        "или <code>299.50</code>). Или нажмите «Отмена»."
+    )
+
+
+def admin_ask_ppr(current: int) -> str:
+    return (
+        "<b>Цена одного запроса</b>\n\n"
+        f"Текущая: <b>{current}</b> (сколько единиц баланса списывается за один "
+        "ответ бота).\n\n"
+        "Пришлите новое целое число ≥ 1 одним сообщением (например, <code>1</code>). "
+        "Или нажмите «Отмена»."
+    )
+
+
+def admin_ask_key(provider: str, current: str) -> str:
+    title = _PROVIDER_TITLE.get(provider, provider)
+    return (
+        f"<b>API-ключ поиска · {title}</b>\n\n"
+        f"Текущий: {mask_key(current)}.\n\n"
+        "Пришлите новый ключ одним сообщением. Он сохранится в базе и применится к "
+        "следующему поиску без перезапуска. Или нажмите «Отмена»."
+    )
+
+
+ADMIN_BAD_PRICE = (
+    "Не похоже на цену. Пришлите положительное число, например <code>299</code> "
+    "или <code>299.50</code>."
+)
+
+ADMIN_BAD_PPR = (
+    "Нужно целое число не меньше 1. Пришлите, например, <code>1</code> или "
+    "<code>2</code>."
+)
+
+ADMIN_BAD_KEY = "Ключ пустой. Пришлите непустой ключ или нажмите «Отмена»."
+
+ADMIN_EDIT_CANCELED = "Изменение отменено."
+
+ADMIN_CLOSED = "Админка закрыта. Откройте снова командой /admin."
+
+
+def admin_saved_price(package: int, value) -> str:
+    return f"Готово. Цена пакета {package} — <b>{_fmt_price(value)} ₽</b>."
+
+
+def admin_saved_ppr(value: int) -> str:
+    return f"Готово. Цена одного запроса — <b>{value}</b>."
+
+
+def admin_saved_key(provider: str) -> str:
+    title = _PROVIDER_TITLE.get(provider, provider)
+    return f"Готово. Ключ {title} обновлён и применится к следующему поиску."
+
+
 def screen_help() -> str:
     return (
         "<b>Помощь и о боте</b>\n\n"

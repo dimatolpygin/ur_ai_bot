@@ -252,7 +252,7 @@ async def _finalize_answer(
     history = await memory.get_history(redis, u.id)
     summary = _build_summary(case, original_question)
     try:
-        reply, sources = await ai.answer_with_search(history, summary, notify)
+        reply, sources = await ai.answer_with_search(history, summary, notify, pool)
     except ai.AIError as e:
         logger.warning(f"ИИ не ответил @{u.username or '—'}: {e} — баланс не списан")
         await _safe_delete(status)

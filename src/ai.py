@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from typing import Awaitable, Callable
 
+import asyncpg
 import aiohttp
 
 from . import search
@@ -168,6 +169,36 @@ async def _post_chat(session: aiohttp.ClientSession, payload: dict) -> dict:
         raise AIError("сеть") from e
 
 
+async def account_credits() -> tuple[float, float] | None:
+    """Остаток кредитов OpenRouter для шапки /admin (этап 7): `GET /credits`.
+
+    Возвращает (остаток, всего_потрачено) в долларах или None при недоступности.
+    Ответ вида {"data": {"total_credits": X, "total_usage": Y}} → остаток = X − Y.
+    Ошибки не бросаем: админка должна открыться даже без связи с OpenRouter.
+    """
+    if not settings.openrouter_api_key:
+        return None
+    url = f"{settings.ai_base_url}/credits"
+    timeout = aiohttp.ClientTimeout(total=15)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=_headers()) as resp:
+                if resp.status != 200:
+                    logger.warning(f"OpenRouter /credits HTTP {resp.status}")
+                    return None
+                data = await resp.json()
+    except (aiohttp.ClientError, Exception) as e:  # noqa: BLE001 — шапка не критична
+        logger.warning(f"OpenRouter /credits недоступен: {e!r}")
+        return None
+    d = data.get("data") or {}
+    try:
+        total = float(d.get("total_credits") or 0)
+        usage = float(d.get("total_usage") or 0)
+    except (TypeError, ValueError):
+        return None
+    return total - usage, usage
+
+
 def _extract_text(data: dict) -> str:
     try:
         return (data["choices"][0]["message"]["content"] or "").strip()
@@ -209,12 +240,14 @@ async def answer_with_search(
     history: list[dict[str, str]],
     question: str,
     notify: NotifyFn | None = None,
+    pool: asyncpg.Pool | None = None,
 ) -> tuple[str, list[str]]:
     """Агент с веб-поиском (этап 3): tool-calling петля с капами и форс-финалом.
 
     Модель сама решает, искать ли и сколько (кап `max_search_steps` + токен-бюджет).
     Возвращает (текст_ответа, список_источников). Списание — в хендлере, только при
-    успешной выдаче. `notify(text)` — статусы пользователю во время поиска.
+    успешной выдаче. `notify(text)` — статусы пользователю во время поиска. `pool`
+    (этап 7) прокидывается в поиск для горячих ключей и учёта расхода провайдеров.
     """
     if not settings.openrouter_api_key:
         raise AIError("OPENROUTER_API_KEY не задан")
@@ -267,7 +300,7 @@ async def answer_with_search(
 
             for call in tool_calls:
                 query = _parse_query(call)
-                results = await search.run_web_search(query)
+                results = await search.run_web_search(query, pool)
                 for r in results:
                     if r.get("url"):
                         sources.append(r["url"])

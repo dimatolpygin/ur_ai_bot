@@ -8,6 +8,8 @@ from decimal import Decimal
 
 import asyncpg
 
+from . import settings_repo
+
 
 async def upsert_user(
     pool: asyncpg.Pool,
@@ -47,18 +49,21 @@ async def get_balance(pool: asyncpg.Pool, tg_id: int) -> int:
 
 
 async def charge_one(pool: asyncpg.Pool, tg_id: int) -> int | None:
-    """Списывает 1 запрос атомарно. Возвращает новый баланс либо None, если
+    """Списывает стоимость одного ответа атомарно. Возвращает новый баланс либо
 
-    списывать нечего (balance <= 0). Условие balance > 0 в UPDATE защищает от
+    None, если списывать нечего (баланса не хватает на цену запроса). Стоимость —
+    `price_per_request` из app_settings (дефолт 1, правится из /admin; при 1
+    поведение идентично этапам 2–6). Условие balance >= cost в UPDATE защищает от
     гонки и от ухода в минус: списание — единственная точка расхода (этап 2).
     """
+    cost = await settings_repo.price_per_request(pool)
     return await pool.fetchval(
         """
-        UPDATE users SET balance = balance - 1
-        WHERE tg_id = $1 AND balance > 0
+        UPDATE users SET balance = balance - $2
+        WHERE tg_id = $1 AND balance >= $2
         RETURNING balance
         """,
-        tg_id,
+        tg_id, cost,
     )
 
 
@@ -198,3 +203,20 @@ async def credit_payment(
                 pay["id"],
             )
             return (int(new_balance) if new_balance is not None else 0), True
+
+
+# ── Статистика для шапки админки (этап 7) ─────────────────────────────────────
+
+async def user_counts(pool: asyncpg.Pool) -> tuple[int, int, int]:
+    """Всего юзеров, платящих (is_paying=true), неплатящих. Одним запросом."""
+    row = await pool.fetchrow(
+        """
+        SELECT
+            count(*)                                    AS total,
+            count(*) FILTER (WHERE is_paying)           AS paying
+        FROM users
+        """
+    )
+    total = int(row["total"])
+    paying = int(row["paying"])
+    return total, paying, total - paying

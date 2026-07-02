@@ -122,7 +122,7 @@ async def handle_employer(
     # Изолированный сценарий: без памяти диалога, только шаблонный запрос.
     try:
         reply, sources = await ai.answer_with_search(
-            [], texts.employer_query(query), notify
+            [], texts.employer_query(query), notify, pool
         )
     except ai.AIError as e:
         logger.warning(f"Проверка работодателя не удалась @{u.username or '—'}: {e}")

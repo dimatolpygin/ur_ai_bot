@@ -20,6 +20,15 @@ CB_BUY = "buy:"  # buy:<package>
 CB_CHECK = "check:"  # check:<yookassa_payment_id>
 CB_CANCEL = "cancel:"  # cancel:<yookassa_payment_id>
 
+# Префиксы callback_data админки (этап 7). Все под общим неймспейсом adm:.
+CB_ADM = "adm:"
+CB_ADM_PKG = "adm:pkg:"  # adm:pkg:<10|20|30>
+CB_ADM_PPR = "adm:ppr"  # цена одного запроса
+CB_ADM_KEY = "adm:key:"  # adm:key:<tavily|exa|firecrawl>
+CB_ADM_REFRESH = "adm:refresh"
+CB_ADM_CLOSE = "adm:close"
+CB_ADM_CANCEL = "adm:cancel"  # отмена ввода значения → назад в меню админки
+
 
 def main_menu() -> ReplyKeyboardMarkup:
     """Главное меню: 4 ветки. Две кнопки в ряд — компактно и читаемо."""
@@ -106,6 +115,38 @@ def payment_actions_kb(confirmation_url: str, yk_id: str) -> InlineKeyboardMarku
                 )
             ],
             [InlineKeyboardButton(text="Отмена", callback_data=f"{CB_CANCEL}{yk_id}")],
+        ]
+    )
+
+
+def admin_menu_kb() -> InlineKeyboardMarkup:
+    """Главное меню админки (inline): цены пакетов, цена запроса, ключи, обновить/закрыть."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Пакет 10", callback_data=f"{CB_ADM_PKG}10"),
+                InlineKeyboardButton(text="Пакет 20", callback_data=f"{CB_ADM_PKG}20"),
+                InlineKeyboardButton(text="Пакет 30", callback_data=f"{CB_ADM_PKG}30"),
+            ],
+            [InlineKeyboardButton(text="Цена запроса", callback_data=CB_ADM_PPR)],
+            [
+                InlineKeyboardButton(text="Ключ Tavily", callback_data=f"{CB_ADM_KEY}tavily"),
+                InlineKeyboardButton(text="Ключ Exa", callback_data=f"{CB_ADM_KEY}exa"),
+            ],
+            [InlineKeyboardButton(text="Ключ Firecrawl", callback_data=f"{CB_ADM_KEY}firecrawl")],
+            [
+                InlineKeyboardButton(text="Обновить", callback_data=CB_ADM_REFRESH),
+                InlineKeyboardButton(text="Закрыть", callback_data=CB_ADM_CLOSE),
+            ],
+        ]
+    )
+
+
+def admin_cancel_kb() -> InlineKeyboardMarkup:
+    """Единственный выход с экрана ввода значения — «Отмена» (назад в меню, без тупиков)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Отмена", callback_data=CB_ADM_CANCEL)]
         ]
     )
 
