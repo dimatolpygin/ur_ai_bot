@@ -88,6 +88,8 @@
 
 **Цель**: адаптивный поиск точной информации со ссылками, в рамках себестоимости.
 
+> **Дизайн конвейера** — [`AGENT_PIPELINE.md`](AGENT_PIPELINE.md) (состояния SEARCHING/ANSWERING, цикл с капами, fallback поисковиков, точка списания).
+
 **Что делаем**:
 - Инструмент `web_search` (Tavily основной; Exa/Firecrawl — запасные через общий интерфейс).
 - Tool-calling петля на `gemini-2.5-flash`: модель сама решает искать/добирать, **кап ≤3–4 шага + лимит токенов**, форс-финал при упоре в кап.
@@ -106,6 +108,8 @@
 ## Этап 4 — Адаптивный сбор ситуации (FSM + flash-lite)
 
 **Цель**: бот сам добирает недостающие детали, но ограниченно и бесплатно для юзера.
+
+> **Дизайн конвейера** — [`AGENT_PIPELINE.md`](AGENT_PIPELINE.md) (состояние COLLECTING, контракт решения JSON, слоты `case`, escape-механизмы).
 
 **Что делаем**:
 - Состояние `COLLECTING`: `gemini-2.5-flash-lite` возвращает structured JSON (enough/confidence/case-слоты/next_question/quick_replies/off_topic).
