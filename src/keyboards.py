@@ -33,3 +33,15 @@ def screen_nav() -> ReplyKeyboardMarkup:
         keyboard=[[KeyboardButton(text=texts.BTN_MAIN_MENU)]],
         resize_keyboard=True,
     )
+
+
+def ask_screen() -> ReplyKeyboardMarkup:
+    """Клавиатура ветки вопроса: сброс контекста и выход в меню."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=texts.BTN_NEW_DIALOG)],
+            [KeyboardButton(text=texts.BTN_MAIN_MENU)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Напишите вопрос одним сообщением",
+    )

@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     # Служебный слой (FSM/решения/уточнения) и финальный ответ + веб-поиск.
     model_service: str = "google/gemini-2.5-flash-lite"
     model_answer: str = "google/gemini-2.5-flash"
+    # Базовый URL OpenRouter (OpenAI-совместимый chat/completions).
+    ai_base_url: str = "https://openrouter.ai/api/v1"
+    ai_request_timeout: int = 60  # секунд на один вызов модели
+    ai_max_tokens: int = 1200  # кап токенов ответа — защита баланса владельца
+    ai_temperature: float = 0.3
+
+    # ── Память диалога (Redis, этап 2) ───────────────────────────────────────
+    # Сколько последних сообщений (user+assistant) держим в контексте.
+    dialog_memory_messages: int = 10
+    dialog_ttl_seconds: int = 259200  # 3 дня — чистим брошенные диалоги
 
     # ── Веб-поиск (этап 3+): Tavily основной, Exa/Firecrawl запасные ──────────
     tavily_api_key: str = ""

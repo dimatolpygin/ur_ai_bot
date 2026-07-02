@@ -44,6 +44,22 @@ async def get_balance(pool: asyncpg.Pool, tg_id: int) -> int:
     return int(val) if val is not None else 0
 
 
+async def charge_one(pool: asyncpg.Pool, tg_id: int) -> int | None:
+    """Списывает 1 запрос атомарно. Возвращает новый баланс либо None, если
+
+    списывать нечего (balance <= 0). Условие balance > 0 в UPDATE защищает от
+    гонки и от ухода в минус: списание — единственная точка расхода (этап 2).
+    """
+    return await pool.fetchval(
+        """
+        UPDATE users SET balance = balance - 1
+        WHERE tg_id = $1 AND balance > 0
+        RETURNING balance
+        """,
+        tg_id,
+    )
+
+
 async def set_fsm_state(pool: asyncpg.Pool, tg_id: int, state: str | None) -> None:
     """Пишет текущее «место» пользователя в боте — чтобы видеть, где он застрял."""
     await pool.execute(
