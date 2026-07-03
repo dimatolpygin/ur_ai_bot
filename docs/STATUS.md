@@ -4,9 +4,10 @@
 > прочтения **обязательно** сверить с реальностью: `git tag -l "stage-*"`,
 > `git log --oneline -20` — таблица ниже может быть устаревшей.
 
-**Последнее обновление**: 2026-07-03 (закрыт Этап 9 — аналитический слой БД, tag stage-9-done)
-**Текущий этап**: Этап 10 — Прод: деплой + CI/CD (🚧 в работе)
-**Следующий шаг**: Взять Этап 10 в работу — финальный этап. `docker-compose.yml` (прод), `scripts/install.sh` (okdeploy/club_bot), боевой `.env`; сервер `89.125.113.12` (Ubuntu, root, локация не РФ), схема `urist_bot`, pg+redis с нуля; GitHub Actions автодеплой на `master` (в `master` мержить ТОЛЬКО по явному указанию). Прод-нюансы из прошлых этапов: `YOOKASSA_PROXY` для RU-выхода (сервер за границей); боевые ключи поисковиков + `ADMIN_IDS` + боевые ключи ЮKassa — в прод-`.env`. Критерии — [`07_ROADMAP.md`](07_ROADMAP.md#этап-10--прод-деплой--cicd).
+**Последнее обновление**: 2026-07-03 (закрыт Этап 10 — прод: деплой + CI/CD, tag stage-10-done — ВСЕ ЭТАПЫ ЗАКРЫТЫ)
+**Текущий этап**: — (все 10 этапов закрыты; бот на проде)
+**Прод-сервер**: `45.88.14.156` (Амстердам, Scalaxy B.V., Ubuntu 24.04, root, ЮKassa доступна). Каталог `/opt/urist_bot`, схема `urist_bot`, стек pg+redis+bot в Docker, автодеплой на `master`. Старый финский `89.125.113.12` — погашен, VPS удаляется.
+**Следующий шаг**: проект на боевом сопровождении. Открытые задачи владельца (не блокеры): боевые ключи ЮKassa вместо тестовых (магазин 1219310) при готовности принимать реальные платежи; реальный контакт поддержки вместо заглушки `@URIST2026_support`. Прод-`.env` на сервере (gitignored, не в репо) — правится на месте + рестарт.
 
 ---
 
@@ -26,23 +27,21 @@
 | 7 | Админка `/admin` | ✅ | `stage-7-done` | `abc7129` | 2026-07-03 |
 | 8 | Помощь + дисклеймеры + анти-абьюз | ✅ | `stage-8-done` | `972a582` | 2026-07-03 |
 | 9 | Аналитический слой БД | ✅ | `stage-9-done` | `e4bc531` | 2026-07-03 |
-| 10 | Прод: деплой + CI/CD | 🚧 | `stage-10-done` | — | — |
+| 10 | Прод: деплой + CI/CD | ✅ | `stage-10-done` | `831a841` | 2026-07-03 |
 
 Детальные критерии приёмки каждого этапа — в [`07_ROADMAP.md`](07_ROADMAP.md).
 
 ## Активная работа
 
-Этап 10 (финальный) — прод: деплой + CI/CD. Репо: `https://github.com/dimatolpygin/ur_ai_bot` (**публичный**, пустой — ждёт первый пуш; remote локально ещё не подключён). Сервер `89.125.113.12` (Ubuntu, root, локация не РФ). Доступы — в `что_собрать.txt`.
-
-Проверка безопасности перед первым публичным пушем: секретных файлов (`что_собрать.txt`/`переписка.txt`/`тз.txt`/`заказ.txt`/`web_search_api-key.txt`/`.env`) в истории git **не было ни в одном коммите**; строк токена/root-пароля/ключа OpenRouter в блобах истории нет — пушить историю `dev` в публичный репо безопасно.
-
-Собираю прод-артефакты (зеркалю club_bot, но без веб-админки — `/admin` внутри Telegram): `docker-compose.yml` (pg+redis+bot), `scripts/install.sh` (под наши env: OpenRouter, ЮKassa+`YOOKASSA_PROXY` для RU-выхода, ключи поиска опционально — задаются в `/admin`), `.github/workflows/deploy.yml` (автодеплой на `master`). Дальше — наружу: пуш в публичный GitHub, GitHub Secrets (добавляет владелец), SSH-деплой, пуш `master` (только по явной команде).
+Нет — все 10 этапов закрыты, бот на боевом сопровождении на `45.88.14.156`.
 
 ## Известные блокеры
 
 Нет.
 
 ## История закрытий
+
+2026-07-03 — Этап 10: Прод — деплой + CI/CD — tag stage-10-done — **ФИНАЛЬНЫЙ, все этапы закрыты; бот на проде.** Прод-артефакты (зеркало club_bot, но без веб-админки — `/admin` внутри Telegram): `docker-compose.yml` (pg+redis+bot, DATABASE_URL/REDIS_URL из compose, DB_SCHEMA/ключи из `.env`, миграции Alembic автоприменяются при старте), `scripts/install.sh` (интерактивный, автоген POSTGRES_PASSWORD, идемпотентный ре-ран), `.github/workflows/deploy.yml` (appleboy/ssh-action, push→master: `git reset --hard origin/master` + `docker compose up -d --build`; секреты `SERVER_HOST/SERVER_USER/SSH_PRIVATE_KEY`, опц. `SERVER_PORT`/`INSTALL_DIR=/opt/urist_bot`), `.gitattributes` (LF для `*.sh` — иначе bash на Linux падает на `\r`). Репо публичный `github.com/dimatolpygin/ur_ai_bot`; перед первым пушем — проверка истории git: секретных файлов и строк токена/root-пароля/ключа OpenRouter в блобах НЕ было ни в одном коммите. Отдельный SSH deploy-ключ (ed25519) только для CI. **Ключевая находка: ЮKassa блокирует по IP-диапазону провайдера, не по стране.** Первый прод-сервер `89.125.113.12` (Финляндия, Inios Oy) — `api.yookassa.ru` недоступен (TCP проходит, TLS-handshake молча дропается, таймаут); Telegram при этом ОК. RU-socks5-прокси (Selectel) не спас (сам канал дырявый: Google/ЮKassa отваливаются). Проверка `curl -w %{http_code} https://api.yookassa.ru/v3/me`: `000` (блок) vs `401` (доступен). **Прод переехал на `45.88.14.156` (Амстердам, Scalaxy B.V. AS58061, 1 CPU/1.9 GB + swap 2G) — там ЮKassa `401`, платежи без прокси**; старый финский погашен (`docker compose down`, 0 контейнеров, VPS удаляется). Верификация машинно+живьём (@Polarasing «вроде ок»): на чистой Ubuntu 24.04 стек поднят с нуля (Docker+swap+клон master+боевой `.env`), миграции 0001–0004 применены к схеме `urist_bot`, бот `@URIST2026_1_BOT` на polling, отвечает `/start` (онбординг 3 бесплатных); **автодеплой проверен** — пустой коммит `ff260f7` → сервер обновился, бот-контейнер пересоздан workflow'ом (deploy-ключ пускает по SSH без пароля); логи Loguru на русском в `docker compose logs bot`; ЮKassa доступна с прода. `ADMIN_IDS=2042819654,645375975` (владелец @Polarasing + клиент @Alex_Alians_A); прод-`.env` gitignored, правится на сервере + рестарт `docker compose up -d --force-recreate bot` (compose перечитывает env_file только при пересоздании, не при `restart`). Открытые задачи владельца (НЕ блокеры): боевые ключи ЮKassa вместо тестовых (магазин 1219310); реальный контакт поддержки вместо `@URIST2026_support`. База на новом сервере чистая (тестовые юзеры со старого не переносились). Push-доступ к GitHub — через системный git credential manager (учётки владельца); коммит-close остаётся в `dev` (в `master` — только по явному указанию, чтобы не триггерить лишний прод-редеплой).
 
 2026-07-03 — Этап 9: Аналитический слой БД (сбор без UI) — tag stage-9-done — типизированный поток бизнес-событий под будущую аналитику/конверсию, без дашбордов (по ТЗ этапа — только сбор). Новая таблица `events` (migration `0004_analytics`): `tg_id`, `type` (стабильный код — не переименовывать без миграции данных), `meta` (JSONB), `created_at`; индексы по `tg_id`, `type`, `(type, created_at)`. Отдельно от `user_events` (сырой firehose из middleware — каждое сообщение/кнопка), чтобы аналитика не тонула в шуме. `repo.log_event(executor, tg_id, type, meta)` — best-effort (try/except, аналитика не роняет бота), `executor` = пул или соединение. Константы `EVENT_*`. Эмиттеры: `register` (`handlers/start`, is_new, meta free); `clarify` (meta step) / `offtopic` (`handlers/ask`); `question` (`handlers/ask` `_finalize_answer`, meta sources/balance_after — рядом с существующим `add_event`); `employer_check` (`handlers/employer`, meta sources); `web_search` — на КАЖДЫЙ реальный вызов провайдера (`search.run_web_search`, meta provider/results; `tg_id` протянут через `ai.answer_with_search(..., tg_id)` из хендлеров ask/employer); `payment_created` (`payments.start_payment`, meta package/amount); `payment_succeeded` (`payments.sync_payment` при credited_now, после транзакции зачисления через пул, meta package/amount). Регистрации/активность — из `users.created_at`/`last_active`/`is_paying` (новых полей не добавляли). Проверка машинно (bot-контейнер, живой пул): миграция 0004 применена; записаны все 8 типов событий с верной JSONB-метой; реальный `run_web_search("МРОТ 2026", tg_id)` → Tavily 5 рез. → событие `web_search {provider:tavily, results:5}`; аналитические SQL-срезы дают всего юзеров / регистрации сегодня / активность за 24ч / платящих / конвертнувшихся (`count(distinct tg_id) where type='payment_succeeded'`); тест-юзер очищен. Живая проверка человеком (@Polarasing): «вроде ок всё» — критерии этапа целиком про сбор в БД, конвейер прогнан сквозным тестом с реальным поиском. Repo без remote — коммиты только локально в `dev`.
 
