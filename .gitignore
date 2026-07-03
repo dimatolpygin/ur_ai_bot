@@ -17,6 +17,7 @@ venv/
 тз.txt
 заказ.txt
 web_search_api-key.txt
+команды_сервера.txt
 
 # IDE / OS
 .idea/
