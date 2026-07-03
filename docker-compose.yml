@@ -1,0 +1,50 @@
+# Продакшен: самодостаточный стек — бот + свои Postgres и Redis.
+# Данные сохраняются в именованных томах, всё перезапускается автоматически.
+# Веб-админки нет: управление ценами/ключами — команда /admin внутри Telegram.
+#
+# Перед запуском заполните .env (минимум BOT_TOKEN, ADMIN_IDS, OPENROUTER_API_KEY,
+# POSTGRES_PASSWORD). Проще всего — через scripts/install.sh.
+# Запуск:  docker compose up -d --build
+# Логи:    docker compose logs -f bot
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # Внутренние адреса БД/Redis — по именам сервисов (переопределяют .env).
+    # Схема (DB_SCHEMA=urist_bot) и все ключи — из .env. Миграции Alembic
+    # применяются автоматически при старте (pg с нуля → своя схема urist_bot).
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  pgdata:
+  redisdata:
