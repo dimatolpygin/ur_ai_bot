@@ -76,6 +76,9 @@ COLLECT_SYSTEM_PROMPT = (
     "{\n"
     '  "off_topic": true|false,   // true, если сообщение НЕ про работу, право, '
     "трудовые отношения, деньги за работу и т.п.\n"
+    '  "answerable": true|false,  // есть ли за что зацепиться, чтобы дать хоть '
+    "сколько-то полезный ответ. false — только если пользователь НИЧЕГО конкретного "
+    "не сказал (одни «не знаю»/«не помню»/«пофиг», ни проблемы, ни сути)\n"
     '  "enough": true|false,      // true, если данных уже хватает для ответа\n'
     '  "confidence": 0.0..1.0,    // уверенность, что данных ХВАТАЕТ для точного '
     "ответа (не просто что понял тему). Задаёшь уточнение — ставь НИЗКИЙ (< 0.7)\n"
@@ -111,7 +114,10 @@ COLLECT_SYSTEM_PROMPT = (
     "Если ты уже задавал уточнение, а пользователь ответил уклончиво, коротко «нет»/"
     "«не знаю» или не по делу — НЕ повторяй тот же вопрос, ставь enough=true и иди к "
     "ответу по тому, что есть.\n"
-    "- Если пользователь уходит от ответа — считай, что данных достаточно (enough=true)."
+    "- Если пользователь уходит от ответа — не зацикливайся: ставь enough=true. Но "
+    "если при этом он так и не сказал ничего конкретного (не назвал ни проблему, ни "
+    "суть) — ставь answerable=false, чтобы мы попросили его описать ситуацию, а не "
+    "выдавали пустой ответ. Если тема хоть немного ясна — answerable=true."
 )
 
 # Слоты карточки — фиксированный набор (AGENT_PIPELINE §4.1).
@@ -529,8 +535,13 @@ def _normalize_decision(raw: str) -> dict:
     missing = parsed.get("missing")
     missing = [str(x) for x in missing] if isinstance(missing, list) else []
 
+    # answerable отсутствует в старом контракте → по умолчанию True (не блокируем ответ).
+    answerable = parsed.get("answerable")
+    answerable = True if answerable is None else bool(answerable)
+
     return {
         "off_topic": bool(parsed.get("off_topic")),
+        "answerable": answerable,
         "enough": bool(parsed.get("enough")),
         "confidence": conf,
         "case": case,

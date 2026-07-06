@@ -216,6 +216,20 @@ async def _collect_step(
     reached_cap = step >= settings.max_collect_steps
     confident = d["confidence"] >= settings.collect_confidence
     if d["enough"] or confident or reached_cap:
+        # Сбор пора завершать, но зацепиться не за что (юзер так и не сказал ничего
+        # конкретного) — не идём в платный поиск ради ответа-пустышки. Просим описать
+        # ситуацию, запрос НЕ списываем (§экономика: списание — только за ответ по сути).
+        if not d["answerable"]:
+            await state.set_state(AskStates.waiting_question)
+            await state.set_data({})
+            await message.answer(
+                texts.VAGUE_REDIRECT, reply_markup=keyboards.ask_screen()
+            )
+            logger.info(
+                f"🤖 Бот → @{u.username or '—'}: данных нет (answerable=false) → "
+                f"просьба описать конкретнее (без списания)"
+            )
+            return
         why = "enough" if d["enough"] else ("confidence" if confident else "cap")
         logger.info(
             f"Сбор завершён @{u.username or '—'}: шаг {step}, "
