@@ -182,8 +182,11 @@ async def _collect_step(
     await message.bot.send_chat_action(message.chat.id, "typing")
     thinking = await message.answer(texts.COLLECT_THINKING)
 
+    # Память прошлого диалога → в сбор, чтобы повторные вопросы той же темы не
+    # переспрашивались с нуля (финал память уже учитывает, сбор — теперь тоже).
+    dialog_history = await memory.get_history(redis, u.id)
     try:
-        d = await ai.collect_decide(ch, case)
+        d = await ai.collect_decide(ch, case, history=dialog_history)
     except ai.AIError as e:
         # Служебная модель сбойнула — не мучаем юзера, идём к ответу по тому, что есть.
         logger.warning(f"Сбор сбойнул @{u.username or '—'}: {e} → сразу к ответу")

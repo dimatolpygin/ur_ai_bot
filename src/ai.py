@@ -341,12 +341,33 @@ async def answer_with_search(
     return text, _dedup(sources)
 
 
-async def collect_decide(collect_history: list[dict], case: dict) -> dict:
+def _compact_dialog(history: list[dict[str, str]], max_chars: int = 400) -> str:
+    """Компактная выжимка памяти диалога для служебной модели: вопросы юзера
+    целиком, длинные ответы бота подрезаем — нужен контекст темы, не весь текст."""
+    lines: list[str] = []
+    for m in history:
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        if m.get("role") == "user":
+            lines.append(f"Пользователь: {content}")
+        else:
+            if len(content) > max_chars:
+                content = content[:max_chars] + "…"
+            lines.append(f"Бот: {content}")
+    return "\n".join(lines)
+
+
+async def collect_decide(
+    collect_history: list[dict], case: dict, history: list[dict] | None = None
+) -> dict:
     """Служебное решение сбора ситуации (этап 4) на flash-lite.
 
     Принимает диалог сбора (реплики юзера и наши уточнения) + уже собранную карточку
-    `case`. Возвращает нормализованный dict по контракту §4.2: off_topic / enough /
-    confidence / case / missing / next_question / quick_replies. Дешёвая модель, JSON.
+    `case` + память прошлого диалога `history` (для повторных вопросов той же темы —
+    иначе сбор переспрашивает уже обсуждённое). Возвращает нормализованный dict по
+    контракту §4.2: off_topic / enough / confidence / case / missing / next_question /
+    quick_replies. Дешёвая модель, JSON.
     """
     if not settings.openrouter_api_key:
         raise AIError("OPENROUTER_API_KEY не задан")
@@ -361,6 +382,21 @@ async def collect_decide(collect_history: list[dict], case: dict) -> dict:
             ),
         },
     ]
+    # Память прошлого диалога: даёт контекст повторным/уточняющим вопросам той же
+    # темы. Без неё сбор стартует «с чистого листа» и переспрашивает известное.
+    if history:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Предыдущий разговор с пользователем — тот же диалог, продолжение "
+                    "темы. Используй как контекст: НЕ переспрашивай уже сказанное; если "
+                    "по контексту ситуация и так ясна — ставь enough=true и не задавай "
+                    "лишних уточнений. Если же это явно новая, не связанная тема — "
+                    "разбирай её отдельно.\n" + _compact_dialog(history)
+                ),
+            }
+        )
     messages.extend(collect_history)
 
     payload = {
