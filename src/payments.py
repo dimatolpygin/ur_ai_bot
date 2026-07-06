@@ -31,7 +31,9 @@ async def start_payment(
         return None
 
     description = f"Пакет {package} запросов — юридический помощник URIST2026"
-    receipt = build_receipt(description, amount)
+    # Email для чека: сохранённый пользователем; заглушка — крайний фолбэк.
+    email = await repo.get_email(pool, tg_id) or settings.receipt_email_placeholder
+    receipt = build_receipt(description, amount, email)
     idem = new_idempotence_key()
     metadata = {"tg_id": str(tg_id), "package": str(package)}
 

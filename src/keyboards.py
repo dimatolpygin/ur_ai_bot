@@ -90,6 +90,15 @@ def employer_result() -> ReplyKeyboardMarkup:
     )
 
 
+def email_input() -> ReplyKeyboardMarkup:
+    """Экран ввода email для чека: единственный выход — «Главное меню» (без тупиков)."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=texts.BTN_MAIN_MENU)]],
+        resize_keyboard=True,
+        input_field_placeholder="Введите email для чека одним сообщением",
+    )
+
+
 def packages_kb(prices: dict) -> InlineKeyboardMarkup:
     """Inline-кнопки покупки пакетов (по строке на пакет): «Пакет N · X ₽»."""
     rows = [

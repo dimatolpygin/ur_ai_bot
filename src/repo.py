@@ -50,6 +50,16 @@ async def get_balance(pool: asyncpg.Pool, tg_id: int) -> int:
     return int(val) if val is not None else 0
 
 
+async def get_email(pool: asyncpg.Pool, tg_id: int) -> str | None:
+    """Сохранённый email пользователя для чека (None — ещё не указывал)."""
+    return await pool.fetchval("SELECT email FROM users WHERE tg_id = $1", tg_id)
+
+
+async def set_email(pool: asyncpg.Pool, tg_id: int, email: str) -> None:
+    """Сохраняет email пользователя (для чеков ЮKassa; спрашиваем один раз)."""
+    await pool.execute("UPDATE users SET email = $2 WHERE tg_id = $1", tg_id, email)
+
+
 async def charge_one(pool: asyncpg.Pool, tg_id: int) -> int | None:
     """Списывает стоимость одного ответа атомарно. Возвращает новый баланс либо
 

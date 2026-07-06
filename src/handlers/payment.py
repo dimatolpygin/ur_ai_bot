@@ -12,9 +12,12 @@
 """
 from __future__ import annotations
 
+import re
+
 import asyncpg
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from .. import keyboards, payments, repo, settings_repo, texts
@@ -22,6 +25,45 @@ from ..logger import logger
 from ..yookassa import YooKassaError
 
 router = Router()
+
+
+class PaymentStates(StatesGroup):
+    waiting_email = State()  # ждём email для чека перед первой покупкой
+
+
+# Простая проверка email: что-то@что-то.домен, без пробелов. Точную валидность
+# всё равно проверит ЮKassa при отправке чека.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+async def _send_invoice(
+    message: Message, pool: asyncpg.Pool, u, package: int
+) -> None:
+    """Создаёт счёт ЮKassa под пакет и отдаёт кнопки оплаты/проверки.
+
+    Общая точка: вызывается сразу (если email уже есть) и после ввода email.
+    """
+    try:
+        data = await payments.start_payment(pool, tg_id=u.id, package=package)
+    except YooKassaError as e:
+        logger.warning(f"ЮKassa не создала платёж @{u.username or '—'}: {e}")
+        await message.answer(texts.PAY_ERROR)
+        return
+
+    if data is None or not data.get("confirmation_url"):
+        await message.answer(texts.PAY_ERROR)
+        return
+
+    await message.answer(
+        texts.pay_created(package, data["amount"]),
+        reply_markup=keyboards.payment_actions_kb(
+            data["confirmation_url"], data["payment_id"]
+        ),
+    )
+    logger.info(
+        f"🤖 Бот → @{u.username or '—'}: счёт на пакет {package} ({data['amount']} ₽), "
+        f"yk_id={data['payment_id']}"
+    )
 
 
 async def send_balance_screen(message: Message, pool: asyncpg.Pool) -> None:
@@ -58,8 +100,11 @@ async def open_balance(
 
 
 @router.callback_query(F.data.startswith(keyboards.CB_BUY))
-async def buy_package(callback: CallbackQuery, pool: asyncpg.Pool) -> None:
-    """Тап по пакету → создаём счёт ЮKassa, отдаём кнопки оплаты/проверки."""
+async def buy_package(
+    callback: CallbackQuery, pool: asyncpg.Pool, state: FSMContext
+) -> None:
+    """Тап по пакету. Нет сохранённого email → сначала спрашиваем его (для чека),
+    иначе сразу создаём счёт ЮKassa."""
     u = callback.from_user
     try:
         package = int(callback.data[len(keyboards.CB_BUY):])
@@ -67,30 +112,57 @@ async def buy_package(callback: CallbackQuery, pool: asyncpg.Pool) -> None:
         await callback.answer()
         return
 
-    try:
-        data = await payments.start_payment(pool, tg_id=u.id, package=package)
-    except YooKassaError as e:
-        logger.warning(f"ЮKassa не создала платёж @{u.username or '—'}: {e}")
-        await callback.message.answer(texts.PAY_ERROR)
+    email = await repo.get_email(pool, u.id)
+    if not email:
+        await state.set_state(PaymentStates.waiting_email)
+        await state.update_data(pending_package=package)
+        await callback.message.answer(texts.ASK_EMAIL, reply_markup=keyboards.email_input())
         await callback.answer()
+        logger.info(f"🤖 Бот → @{u.username or '—'}: прошу email перед покупкой пакета {package}")
         return
 
-    if data is None or not data.get("confirmation_url"):
-        await callback.message.answer(texts.PAY_ERROR)
-        await callback.answer()
-        return
-
-    await callback.message.answer(
-        texts.pay_created(package, data["amount"]),
-        reply_markup=keyboards.payment_actions_kb(
-            data["confirmation_url"], data["payment_id"]
-        ),
-    )
+    await _send_invoice(callback.message, pool, u, package)
     await callback.answer()
-    logger.info(
-        f"🤖 Бот → @{u.username or '—'}: счёт на пакет {package} ({data['amount']} ₽), "
-        f"yk_id={data['payment_id']}"
+
+
+@router.message(PaymentStates.waiting_email, F.text == texts.BTN_MAIN_MENU)
+async def email_to_menu(
+    message: Message, pool: asyncpg.Pool, state: FSMContext
+) -> None:
+    """Выход из ввода email в главное меню (без списаний, без тупиков)."""
+    u = message.from_user
+    await state.clear()
+    balance = await repo.get_balance(pool, u.id)
+    await repo.set_fsm_state(pool, u.id, "screen:main_menu")
+    await message.answer(
+        texts.welcome_back(u.first_name, balance), reply_markup=keyboards.main_menu()
     )
+    logger.info(f"🤖 Бот → @{u.username or '—'}: отмена ввода email → главное меню")
+
+
+@router.message(PaymentStates.waiting_email, F.text)
+async def receive_email(
+    message: Message, pool: asyncpg.Pool, state: FSMContext
+) -> None:
+    """Приняли email: валидируем, сохраняем, продолжаем к счёту за отложенный пакет."""
+    u = message.from_user
+    email = (message.text or "").strip()
+    if not _EMAIL_RE.match(email):
+        await message.answer(texts.EMAIL_INVALID, reply_markup=keyboards.email_input())
+        logger.info(f"🤖 Бот → @{u.username or '—'}: невалидный email, переспрашиваю")
+        return
+
+    await repo.set_email(pool, u.id, email)
+    data = await state.get_data()
+    package = data.get("pending_package")
+    await state.clear()
+    await message.answer(texts.email_saved(email))
+    logger.info(f"🤖 Бот → @{u.username or '—'}: email сохранён ({email}), пакет {package}")
+
+    if package:
+        await _send_invoice(message, pool, u, package)
+    else:
+        await send_balance_screen(message, pool)
 
 
 @router.callback_query(F.data.startswith(keyboards.CB_CHECK))

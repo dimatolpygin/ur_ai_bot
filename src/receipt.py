@@ -1,20 +1,23 @@
 """Чек 54-ФЗ для платежа ЮKassa — единая точка сборки.
 
-Email покупателя пока не собираем у пользователя — подставляем заглушку из
-настроек (receipt_email_placeholder). Когда понадобится реальный email —
-достаточно начать сохранять его в users.email и подхватить здесь.
+Email покупателя спрашиваем перед первой покупкой и храним в users.email; сюда он
+приходит параметром (см. payments.start_payment). Если по какой-то причине пусто —
+подставляем заглушку из настроек (receipt_email_placeholder).
+
+vat_code=1 — «Без НДС» (ИП на УСН «доходы» без НДС). tax_system_code не
+передаём: у магазина одна система налогообложения, касса подставит сама. Если у
+магазина ЕСТЬ НДС или НЕСКОЛЬКО систем — поменять vat_code (2/3/4) и добавить
+tax_system_code (напр. 2 — УСН доход) по режиму ИП.
 """
 from __future__ import annotations
 
 from decimal import Decimal
 
-from .config import settings
 
-
-def build_receipt(description: str, amount: Decimal) -> dict:
-    """Чек из одной позиции (пакет запросов). vat_code=1 — без НДС (УСН)."""
+def build_receipt(description: str, amount: Decimal, email: str) -> dict:
+    """Чек из одной позиции (пакет запросов). email — на него уйдёт чек."""
     return {
-        "customer": {"email": settings.receipt_email_placeholder},
+        "customer": {"email": email},
         "items": [
             {
                 "description": description,

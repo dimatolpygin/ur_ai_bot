@@ -226,6 +226,22 @@ def balance_screen(balance: int, prices: dict, history: list) -> str:
 
 CHOOSE_PACKAGE = "Выберите пакет запросов для покупки:"
 
+ASK_EMAIL = (
+    "<b>Почти всё готово.</b>\n\n"
+    "Укажите ваш <b>email</b> — на него придёт чек об оплате. "
+    "Введите адрес одним сообщением (например, <code>ivan@mail.ru</code>).\n\n"
+    "<i>Спросим только один раз — потом сохраним.</i>"
+)
+
+EMAIL_INVALID = (
+    "Это не похоже на email. Введите адрес вида <code>name@mail.ru</code> "
+    "или вернитесь в «Главное меню»."
+)
+
+
+def email_saved(email: str) -> str:
+    return f"Email сохранён: <code>{email}</code>\nГотовлю счёт…"
+
 
 def pay_created(package: int, amount) -> str:
     """Сообщение со счётом: как оплатить и проверить."""
