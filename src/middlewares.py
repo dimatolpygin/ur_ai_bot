@@ -144,3 +144,82 @@ class AntiAbuseMiddleware(BaseMiddleware):
                 f"{count} сообщ. за {settings.rate_limit_window_seconds}с — гашу"
             )
         return True
+
+
+# Кнопки навигации/управления и команды — лёгкие действия и запасные выходы. Их
+# single-flight НЕ блокирует, иначе при зависшем/долгом ответе юзер не сможет
+# отменить/выйти/переключить экран (тупик).
+_PASS_LABELS = frozenset(
+    {
+        texts.BTN_ASK,
+        texts.BTN_EMPLOYER,
+        texts.BTN_BALANCE,
+        texts.BTN_HELP,
+        texts.BTN_MAIN_MENU,
+        texts.BTN_NEW_DIALOG,
+        texts.BTN_ANSWER_NOW,
+        texts.BTN_CANCEL,
+        texts.BTN_CHECK_ANOTHER,
+    }
+)
+
+
+class BusyMiddleware(BaseMiddleware):
+    """Single-flight на пользователя: пока идёт тяжёлый ИИ-поток (сбор → поиск →
+    ответ), новые содержательные сообщения того же юзера НЕ запускают параллельную
+    обработку. Иначе (юзер строчит несколько вопросов подряд быстрее, чем бот
+    отвечает) получаем гонку FSM/памяти в Redis, кратные списания баланса и потерю
+    ответов (ответы затирают друг друга). Занятому отвечаем «подождите» — запрос не
+    списывается, поток не запускается.
+
+    Замок — Redis SET NX EX; TTL страхует от зависшего потока (тогда замок протухнет
+    сам, юзер не залипнет). Пропускаем всегда: callback'и, команды и кнопки навигации
+    /управления — это лёгкие действия и запасные выходы, блокировать их нельзя.
+    Регистрируется ПОСЛЕ анти-абьюза (флуд/длину режем раньше, до взятия замка).
+    """
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        update: Update = event  # type: ignore[assignment]
+        msg = update.message
+        if msg is None or msg.from_user is None:
+            return await handler(event, data)
+
+        text = msg.text or ""
+        # Команды и кнопки навигации — всегда пропускаем (escape-hatch, не тяжёлые).
+        if not text or text.startswith("/") or text in _PASS_LABELS:
+            return await handler(event, data)
+
+        redis = data.get("redis")
+        if redis is None:  # без Redis замок не поставить — не ломаем обработку
+            return await handler(event, data)
+
+        uid = msg.from_user.id
+        key = f"urist:busy:{uid}"
+        try:
+            acquired = await redis.set(
+                key, "1", nx=True, ex=settings.busy_lock_ttl_seconds
+            )
+        except Exception as e:  # noqa: BLE001 — сбой Redis не должен ронять обработку
+            logger.warning(f"Busy-lock: сбой Redis ({e!r}) — пропускаю без замка")
+            return await handler(event, data)
+
+        if not acquired:
+            await msg.answer(texts.BUSY)
+            logger.info(
+                f"⏳ Занят @{msg.from_user.username or '—'} (id:{uid}): сообщение "
+                f"отклонено — предыдущий вопрос ещё в обработке (без списания)"
+            )
+            return
+
+        try:
+            return await handler(event, data)
+        finally:
+            try:
+                await redis.delete(key)
+            except Exception as e:  # noqa: BLE001 — не снятый замок протухнет по TTL
+                logger.warning(f"Busy-lock: не снял замок (id:{uid}): {e!r}")
